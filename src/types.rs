@@ -1,5 +1,6 @@
 use std::path::PathBuf;
-use tokio::sync::mpsc::{self, Receiver, Sender};
+
+#[derive(Debug)]
 
 pub enum FSObj {
     File(File),
@@ -7,23 +8,29 @@ pub enum FSObj {
     Dir(Dir),
 }
 
+#[derive(Debug)]
 pub struct File {
     name: PathBuf,
     size_in_bytes: u64,
 }
+#[derive(Debug)]
 pub struct Link {
     name: PathBuf,
 }
 
+#[derive(Debug)]
 pub struct Dir {
     name: PathBuf,
     dir_obj_list: Vec<FSObj>,
 }
 
+#[derive(Debug)]
 pub enum DirpError {
     StdIoError(std::io::Error),
+    JoinError(tokio::task::JoinError),
 }
 
+#[derive(Debug)]
 pub enum DirpStateMessage {
     DirScanMessage(DirScanMessage),
     FSCreateMessage(FSCreateMessage),
@@ -31,22 +38,26 @@ pub enum DirpStateMessage {
     FSMoveMessage(FSMoveMessage),
 }
 
+#[derive(Debug)]
 pub struct DirScanMessage {
-    dir_path: PathBuf,
-    fs_obj_list: Vec<FSObj>,
+    pub dir_path: PathBuf,
+    pub fs_obj_list: Vec<FSObj>,
 }
 
+#[derive(Debug)]
 pub struct FSCreateMessage {
-    dir_path: PathBuf,
+    pub dir_path: PathBuf,
 }
 
+#[derive(Debug)]
 pub struct FSDeleteMessage {
-    dir_path: PathBuf,
+    pub dir_path: PathBuf,
 }
 
+#[derive(Debug)]
 pub struct FSMoveMessage {
-    from_dir_path: PathBuf,
-    to_dir_path: PathBuf,
+    pub from_dir_path: PathBuf,
+    pub to_dir_path: PathBuf,
 }
 
 impl File {
@@ -76,5 +87,11 @@ impl Dir {
 impl From<std::io::Error> for DirpError {
     fn from(error: std::io::Error) -> Self {
         DirpError::StdIoError(error)
+    }
+}
+
+impl From<tokio::task::JoinError> for DirpError {
+    fn from(error: tokio::task::JoinError) -> Self {
+        DirpError::JoinError(error)
     }
 }
