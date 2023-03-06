@@ -10,7 +10,7 @@ pub async fn scan_dir_path_task(
     tokio::spawn(async move {
         // Create a list containing a FSObj for each directory item in the
         // specified dir and return it.
-        let mut dir_obj_list = Vec::<FSObj>::new();
+        let mut fs_obj_list = Vec::<FSObj>::new();
 
         for dir_entry in fs::read_dir(dir_path.clone())? {
             let dir_entry = dir_entry?;
@@ -18,18 +18,23 @@ pub async fn scan_dir_path_task(
             let meta_data = dir_entry.metadata()?;
 
             if obj_path.is_dir() {
-                dir_obj_list.push(FSObj::Dir(Dir::new(obj_path.clone())));
+                fs_obj_list.push(FSObj::Dir(Dir::new(obj_path.clone())));
                 if recurse {
                     scan_dir_path_task(obj_path, dirp_state_sender.clone(), recurse);
                 }
             } else if obj_path.is_file() {
-                dir_obj_list.push(FSObj::File(File::new(obj_path, meta_data.st_size())))
+                fs_obj_list.push(FSObj::File(File::new(obj_path, meta_data.st_size())))
             } else if obj_path.is_symlink() {
-                dir_obj_list.push(FSObj::Link(Link::new(obj_path)))
+                fs_obj_list.push(FSObj::Link(Link::new(obj_path)))
             }
         }
 
-        Ok(dir_obj_list)
+        dirp_state_sender.send(DirpStateMessage::DirScanMessage(DirScanMessage {
+            dir_path,
+            fs_obj_list: fs_obj_list.clone(),
+        }));
+
+        Ok(fs_obj_list)
     })
     .await?
 }

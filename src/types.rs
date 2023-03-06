@@ -36,6 +36,7 @@ pub enum DirpStateMessage {
     FSCreateMessage(FSCreateMessage),
     FSDeleteMessage(FSDeleteMessage),
     FSMoveMessage(FSMoveMessage),
+    Quit,
 }
 
 #[derive(Debug)]
