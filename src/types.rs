@@ -1,33 +1,34 @@
-use std::path::PathBuf;
+use std::sync::mpsc::{RecvError, SendError};
+use std::{collections::HashMap, path::PathBuf};
 
-#[derive(Debug)]
-
+#[derive(Debug, Clone)]
 pub enum FSObj {
     File(File),
     Link(Link),
     Dir(Dir),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct File {
-    name: PathBuf,
-    size_in_bytes: u64,
+    pub name: PathBuf,
+    pub size_in_bytes: u64,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Link {
-    name: PathBuf,
+    pub name: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Dir {
-    name: PathBuf,
-    dir_obj_list: Vec<FSObj>,
+    pub name: PathBuf,
+    pub dir_obj_list: Vec<FSObj>,
 }
 
 #[derive(Debug)]
 pub enum DirpError {
     StdIoError(std::io::Error),
-    JoinError(tokio::task::JoinError),
+    RecvError(std::sync::mpsc::RecvError),
+    SendErrorDirpStateMessage(std::sync::mpsc::SendError<DirpStateMessage>),
 }
 
 #[derive(Debug)]
@@ -36,6 +37,8 @@ pub enum DirpStateMessage {
     FSCreateMessage(FSCreateMessage),
     FSDeleteMessage(FSDeleteMessage),
     FSMoveMessage(FSMoveMessage),
+    GetStateRequest,
+    GetStateResponse(GetStateResponse),
     Quit,
 }
 
@@ -59,6 +62,11 @@ pub struct FSDeleteMessage {
 pub struct FSMoveMessage {
     pub from_dir_path: PathBuf,
     pub to_dir_path: PathBuf,
+}
+
+#[derive(Debug)]
+pub struct GetStateResponse {
+    pub dirp_state: HashMap<PathBuf, Vec<FSObj>>,
 }
 
 impl File {
@@ -91,8 +99,14 @@ impl From<std::io::Error> for DirpError {
     }
 }
 
-impl From<tokio::task::JoinError> for DirpError {
-    fn from(error: tokio::task::JoinError) -> Self {
-        DirpError::JoinError(error)
+impl From<std::sync::mpsc::RecvError> for DirpError {
+    fn from(error: std::sync::mpsc::RecvError) -> Self {
+        DirpError::RecvError(error)
+    }
+}
+
+impl From<std::sync::mpsc::SendError<DirpStateMessage>> for DirpError {
+    fn from(error: std::sync::mpsc::SendError<DirpStateMessage>) -> Self {
+        DirpError::SendErrorDirpStateMessage(error)
     }
 }
