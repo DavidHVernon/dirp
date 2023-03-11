@@ -2,18 +2,15 @@ use threadpool::ThreadPool;
 
 use crate::types::*;
 use crate::utils::*;
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, JoinHandle};
-
-type FSObjHash = HashMap<PathBuf, Vec<FSObj>>;
 
 pub fn dirp_state_thread_spawn(
     path: PathBuf,
     user_sender: Sender<DirpStateMessage>,
     dirp_state_sender: Sender<DirpStateMessage>,
-    mut dirp_state_receiver: Receiver<DirpStateMessage>,
+    dirp_state_receiver: Receiver<DirpStateMessage>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         if let Err(error) =
@@ -28,48 +25,77 @@ pub fn dirp_state_loop(
     path: PathBuf,
     user_sender: Sender<DirpStateMessage>,
     dirp_state_sender: Sender<DirpStateMessage>,
-    mut dirp_state_receiver: Receiver<DirpStateMessage>,
+    dirp_state_receiver: Receiver<DirpStateMessage>,
 ) -> Result<(), DirpError> {
     let threadpool = ThreadPool::new(30);
-    let mut dirp_state = FSObjHash::new();
+    let mut dirp_state = DirHash::new();
 
     scan_dir_path_in_threadpool(path, dirp_state_sender.clone(), threadpool.clone());
 
     loop {
         match dirp_state_receiver.recv() {
             Ok(message) => match message {
-                DirpStateMessage::DirScanMessage(dir_scan_message) => {
-                    // Recursively scan dirs.
-                    for fs_obj in &dir_scan_message.fs_obj_list {
-                        if let FSObj::Dir(dir_obj) = fs_obj {
-                            scan_dir_path_in_threadpool(
-                                dir_obj.name.clone(),
-                                dirp_state_sender.clone(),
-                                threadpool.clone(),
-                            );
-                        }
-                    }
-                    // Update state.
-                    dirp_state.insert(dir_scan_message.dir_path, dir_scan_message.fs_obj_list);
+                DirpStateMessage::DirScanMessage(dir) => {
+                    process_dir_scan_message(dir, &mut dirp_state, &dirp_state_sender, &threadpool);
                 }
-                DirpStateMessage::FSCreateMessage(_fs_create_message) => {}
-                DirpStateMessage::FSMoveMessage(_fs_move_message) => {}
-                DirpStateMessage::FSDeleteMessage(_fs_delete_message) => {}
                 DirpStateMessage::GetStateRequest => {
                     user_sender.send(DirpStateMessage::GetStateResponse(GetStateResponse {
                         dirp_state: dirp_state.clone(),
                     }))?;
                 }
-                DirpStateMessage::GetStateResponse(_state_response) => {}
+                DirpStateMessage::GetStateResponse(_state_response) => {
+                    assert!(false, "Invalid message.");
+                }
                 DirpStateMessage::Quit => break,
             },
-            Err(error) => {
+            Err(_error) => {
                 // Error means connection closed, so exit.
                 break;
             }
         }
     }
     Ok(())
+}
+
+fn process_dir_scan_message(
+    mut dir: Dir,
+    dirp_state: &mut DirHash,
+    dirp_state_sender: &Sender<DirpStateMessage>,
+    threadpool: &ThreadPool,
+) {
+    dir.size_in_bytes = 0;
+    for fs_obj in &dir.dir_obj_list {
+        match fs_obj {
+            FSObj::Dir(_) => {
+                assert!(false, "Invalid state.");
+            }
+            FSObj::DirRef(dir_ref) => {
+                // Recurse
+                scan_dir_path_in_threadpool(
+                    dir_ref.path.clone(),
+                    dirp_state_sender.clone(),
+                    threadpool.clone(),
+                );
+            }
+            FSObj::SymLink(_) => {
+                // Ignore
+            }
+            FSObj::File(file) => {
+                // Size the directory
+                dir.size_in_bytes += file.size_in_bytes;
+            }
+        }
+    }
+
+    // Resize parent dirs.
+    while let Some(parent_path) = dir.path.parent() {
+        if let Some(parent_dir) = dirp_state.get_mut(parent_path) {
+            parent_dir.size_in_bytes += dir.size_in_bytes;
+        }
+    }
+
+    // Update state.
+    dirp_state.insert(dir.path.clone(), dir);
 }
 
 pub struct DirpState {
@@ -81,12 +107,12 @@ pub struct DirpState {
 impl DirpState {
     pub fn new() -> DirpState {
         let (dirp_state_sender, dirp_state_receiver) = channel();
-        let (sender, mut receiver) = channel();
+        let (sender, receiver) = channel();
 
         // Spawn a long running task to manage dirp state.
         let thread_handle = dirp_state_thread_spawn(
             PathBuf::from("./test"),
-            sender,
+            sender.clone(),
             dirp_state_sender.clone(),
             dirp_state_receiver,
         );

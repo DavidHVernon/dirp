@@ -1,27 +1,38 @@
-use std::sync::mpsc::{RecvError, SendError};
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, hash::Hash, path::PathBuf};
 
-#[derive(Debug, Clone)]
+pub type FSObjList = Vec<FSObj>;
+pub type DirHash = HashMap<PathBuf, Dir>;
+
+#[derive(Debug, Clone, Hash)]
 pub enum FSObj {
     File(File),
-    Link(Link),
+    SymLink(SymLink),
     Dir(Dir),
+    DirRef(DirRef),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct File {
-    pub name: PathBuf,
+    pub path: PathBuf,
     pub size_in_bytes: u64,
 }
-#[derive(Debug, Clone)]
-pub struct Link {
-    pub name: PathBuf,
+#[derive(Debug, Clone, Hash)]
+pub struct SymLink {
+    pub path: PathBuf,
+    pub size_in_bytes: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct Dir {
-    pub name: PathBuf,
-    pub dir_obj_list: Vec<FSObj>,
+    pub path: PathBuf,
+    pub size_in_bytes: u64,
+    pub dir_obj_list: FSObjList,
+}
+
+#[derive(Debug, Clone, Hash)]
+pub struct DirRef {
+    pub path: PathBuf,
+    pub size_in_bytes: u64,
 }
 
 #[derive(Debug)]
@@ -33,64 +44,15 @@ pub enum DirpError {
 
 #[derive(Debug)]
 pub enum DirpStateMessage {
-    DirScanMessage(DirScanMessage),
-    FSCreateMessage(FSCreateMessage),
-    FSDeleteMessage(FSDeleteMessage),
-    FSMoveMessage(FSMoveMessage),
+    DirScanMessage(Dir),
     GetStateRequest,
     GetStateResponse(GetStateResponse),
     Quit,
 }
 
 #[derive(Debug)]
-pub struct DirScanMessage {
-    pub dir_path: PathBuf,
-    pub fs_obj_list: Vec<FSObj>,
-}
-
-#[derive(Debug)]
-pub struct FSCreateMessage {
-    pub dir_path: PathBuf,
-}
-
-#[derive(Debug)]
-pub struct FSDeleteMessage {
-    pub dir_path: PathBuf,
-}
-
-#[derive(Debug)]
-pub struct FSMoveMessage {
-    pub from_dir_path: PathBuf,
-    pub to_dir_path: PathBuf,
-}
-
-#[derive(Debug)]
 pub struct GetStateResponse {
-    pub dirp_state: HashMap<PathBuf, Vec<FSObj>>,
-}
-
-impl File {
-    pub fn new(name: PathBuf, size_in_bytes: u64) -> File {
-        File {
-            name,
-            size_in_bytes,
-        }
-    }
-}
-
-impl Link {
-    pub fn new(name: PathBuf) -> Link {
-        Link { name }
-    }
-}
-
-impl Dir {
-    pub fn new(name: PathBuf) -> Dir {
-        Dir {
-            name,
-            dir_obj_list: Vec::<FSObj>::new(),
-        }
-    }
+    pub dirp_state: DirHash,
 }
 
 impl From<std::io::Error> for DirpError {
