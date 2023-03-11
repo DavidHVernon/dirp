@@ -6,7 +6,7 @@ use threadpool::ThreadPool;
 pub fn scan_dir_path_in_threadpool(
     dir_path: PathBuf,
     dirp_state_sender: Sender<DirpStateMessage>,
-    threadpool: ThreadPool,
+    threadpool: &ThreadPool,
 ) {
     threadpool.execute(move || {
         if let Err(error) = scan_dir_path(dir_path, dirp_state_sender) {
@@ -70,9 +70,9 @@ mod tests {
         let threadpool = ThreadPool::new(30);
         let (sender, receiver) = channel();
 
-        scan_dir_path_in_threadpool(PathBuf::from("./test/a"), sender.clone(), threadpool);
+        scan_dir_path_in_threadpool(PathBuf::from("./test/a"), sender.clone(), &threadpool);
 
-        sleep(Duration::from_secs(3));
+        sleep(Duration::from_secs(1));
 
         let dirp_state_message = receiver.recv()?;
         if let DirpStateMessage::DirScanMessage(dir) = dirp_state_message {

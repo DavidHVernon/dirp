@@ -8,7 +8,7 @@ use std::thread::{self, JoinHandle};
 
 pub fn dirp_state_thread_spawn(
     path: PathBuf,
-    user_sender: Sender<DirpStateMessage>,
+    user_sender: Sender<UserMessage>,
     dirp_state_sender: Sender<DirpStateMessage>,
     dirp_state_receiver: Receiver<DirpStateMessage>,
 ) -> JoinHandle<()> {
@@ -23,14 +23,14 @@ pub fn dirp_state_thread_spawn(
 
 pub fn dirp_state_loop(
     path: PathBuf,
-    user_sender: Sender<DirpStateMessage>,
+    user_sender: Sender<UserMessage>,
     dirp_state_sender: Sender<DirpStateMessage>,
     dirp_state_receiver: Receiver<DirpStateMessage>,
 ) -> Result<(), DirpError> {
     let threadpool = ThreadPool::new(30);
     let mut dirp_state = DirHash::new();
 
-    scan_dir_path_in_threadpool(path, dirp_state_sender.clone(), threadpool.clone());
+    scan_dir_path_in_threadpool(path, dirp_state_sender.clone(), &threadpool);
 
     loop {
         match dirp_state_receiver.recv() {
@@ -39,12 +39,12 @@ pub fn dirp_state_loop(
                     process_dir_scan_message(dir, &mut dirp_state, &dirp_state_sender, &threadpool);
                 }
                 DirpStateMessage::GetStateRequest => {
-                    user_sender.send(DirpStateMessage::GetStateResponse(GetStateResponse {
+                    user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
                         dirp_state: dirp_state.clone(),
                     }))?;
                 }
-                DirpStateMessage::GetStateResponse(_state_response) => {
-                    assert!(false, "Invalid message.");
+                DirpStateMessage::NoOp(no_op) => {
+                    println!("NoOp: {}.", no_op);
                 }
                 DirpStateMessage::Quit => break,
             },
@@ -74,7 +74,7 @@ fn process_dir_scan_message(
                 scan_dir_path_in_threadpool(
                     dir_ref.path.clone(),
                     dirp_state_sender.clone(),
-                    threadpool.clone(),
+                    &threadpool,
                 );
             }
             FSObj::SymLink(_) => {
@@ -88,10 +88,12 @@ fn process_dir_scan_message(
     }
 
     // Resize parent dirs.
-    while let Some(parent_path) = dir.path.parent() {
+    let mut parent_path_opt = dir.path.parent();
+    while let Some(parent_path) = parent_path_opt {
         if let Some(parent_dir) = dirp_state.get_mut(parent_path) {
             parent_dir.size_in_bytes += dir.size_in_bytes;
         }
+        parent_path_opt = parent_path.parent();
     }
 
     // Update state.
@@ -99,33 +101,33 @@ fn process_dir_scan_message(
 }
 
 pub struct DirpState {
-    sender: Sender<DirpStateMessage>,
-    receiver: Receiver<DirpStateMessage>,
+    user_receiver: Receiver<UserMessage>,
+    dirp_state_sender: Sender<DirpStateMessage>,
     thread_handle: JoinHandle<()>,
 }
 
 impl DirpState {
-    pub fn new() -> DirpState {
+    pub fn new(path: PathBuf) -> DirpState {
         let (dirp_state_sender, dirp_state_receiver) = channel();
-        let (sender, receiver) = channel();
+        let (user_sender, user_receiver) = channel();
 
         // Spawn a long running task to manage dirp state.
         let thread_handle = dirp_state_thread_spawn(
-            PathBuf::from("./test"),
-            sender.clone(),
+            path,
+            user_sender.clone(),
             dirp_state_sender.clone(),
             dirp_state_receiver,
         );
 
         DirpState {
-            sender: dirp_state_sender,
-            receiver,
+            user_receiver,
+            dirp_state_sender,
             thread_handle,
         }
     }
 
     pub fn quit(self) {
-        if let Err(error) = self.sender.send(DirpStateMessage::Quit) {
+        if let Err(error) = self.dirp_state_sender.send(DirpStateMessage::Quit) {
             panic!(
                 "DirpState.quit(): Could not send quit message. Error: {:#?}",
                 error
@@ -140,13 +142,13 @@ impl DirpState {
     }
 
     pub fn send(&self, message: DirpStateMessage) {
-        if let Err(error) = self.sender.send(message) {
+        if let Err(error) = self.dirp_state_sender.send(message) {
             panic!("DirpState.send(): error: {:#?}", error);
         }
     }
 
-    pub fn recv(&self) -> DirpStateMessage {
-        match self.receiver.recv() {
+    pub fn recv(&self) -> UserMessage {
+        match self.user_receiver.recv() {
             Ok(message) => {
                 return message;
             }
@@ -156,22 +158,21 @@ impl DirpState {
         }
     }
 
-    pub fn make_request(&self, request: DirpStateMessage) -> DirpStateMessage {
+    pub fn make_request(&self, request: DirpStateMessage) -> UserMessage {
         self.send(request);
-        return self.recv();
+        self.recv()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{thread::sleep, time::Duration};
-
     use super::*;
+    use std::{thread::sleep, time::Duration};
 
     #[test]
     fn test_dirp_state_task() -> Result<(), DirpError> {
-        let dirp_state = DirpState::new();
-        sleep(Duration::from_secs(3));
+        let dirp_state = DirpState::new(PathBuf::from("./test"));
+        sleep(Duration::from_secs(1));
         let dirp_state_list = dirp_state.make_request(DirpStateMessage::GetStateRequest);
         println!("{:#?}", dirp_state_list);
         dirp_state.quit();

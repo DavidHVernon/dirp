@@ -40,14 +40,20 @@ pub enum DirpError {
     StdIoError(std::io::Error),
     RecvError(std::sync::mpsc::RecvError),
     SendErrorDirpStateMessage(std::sync::mpsc::SendError<DirpStateMessage>),
+    SendErrorUserMessage(std::sync::mpsc::SendError<UserMessage>),
 }
 
 #[derive(Debug)]
 pub enum DirpStateMessage {
     DirScanMessage(Dir),
     GetStateRequest,
-    GetStateResponse(GetStateResponse),
+    NoOp(bool),
     Quit,
+}
+
+#[derive(Debug)]
+pub enum UserMessage {
+    GetStateResponse(GetStateResponse),
 }
 
 #[derive(Debug)]
@@ -70,5 +76,11 @@ impl From<std::sync::mpsc::RecvError> for DirpError {
 impl From<std::sync::mpsc::SendError<DirpStateMessage>> for DirpError {
     fn from(error: std::sync::mpsc::SendError<DirpStateMessage>) -> Self {
         DirpError::SendErrorDirpStateMessage(error)
+    }
+}
+
+impl From<std::sync::mpsc::SendError<UserMessage>> for DirpError {
+    fn from(error: std::sync::mpsc::SendError<UserMessage>) -> Self {
+        DirpError::SendErrorUserMessage(error)
     }
 }
