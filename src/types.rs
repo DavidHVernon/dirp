@@ -52,13 +52,13 @@ pub enum DirpStateMessage {
     Quit,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 pub enum UserMessage {
     GetStateResponse(GetStateResponse),
     NoOp(bool),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Hash)]
 pub struct GetStateResponse {
     pub dirp_state: Dir,
 }

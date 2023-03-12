@@ -217,7 +217,7 @@ impl DirpState {
         }
     }
 
-    pub fn make_request(&self, request: DirpStateMessage) -> UserMessage {
+    pub fn request(&self, request: DirpStateMessage) -> UserMessage {
         self.send(request);
         self.recv()
     }
@@ -226,15 +226,23 @@ impl DirpState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{thread::sleep, time::Duration};
+    use std::hash::{Hash, Hasher};
+    use std::{collections::hash_map::DefaultHasher, thread::sleep, time::Duration};
 
     #[test]
     fn test_dirp_state_task() -> Result<(), DirpError> {
         let dirp_state = DirpState::new(PathBuf::from("./test"));
-        sleep(Duration::from_secs(1));
         let dirp_state_list = dirp_state.recv();
         if let UserMessage::GetStateResponse(dirp_state_list) = dirp_state_list {
+            let expected_hash = 5662441951356583153 as u64;
+            let mut hasher = DefaultHasher::new();
+            dirp_state_list.hash(&mut hasher);
+            let hash = hasher.finish();
+
             println!("{:#?}", dirp_state_list.dirp_state);
+            println!("Hash: {}", hash);
+
+            assert_eq!(expected_hash, hash, "Error: Unexpected result.");
         }
 
         dirp_state.quit();
