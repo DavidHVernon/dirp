@@ -27,20 +27,26 @@ pub fn scan_dir_path(
         let obj_path = dir_entry.path();
         let meta_data = dir_entry.metadata()?;
 
+        if dir_entry.file_name() == ".DS_Store" {
+            continue;
+        }
+
         if obj_path.is_dir() {
             fs_obj_list.push(FSObj::DirRef(DirRef {
                 path: obj_path.clone(),
+                size_in_bytes: 0,
+            }));
+        } else if obj_path.is_symlink() {
+            // NOTE: Symlink needs to be checked before file because symlinks
+            // are files.
+            fs_obj_list.push(FSObj::SymLink(SymLink {
+                path: obj_path,
                 size_in_bytes: 0,
             }));
         } else if obj_path.is_file() {
             fs_obj_list.push(FSObj::File(File {
                 path: obj_path,
                 size_in_bytes: meta_data.st_size(),
-            }));
-        } else if obj_path.is_symlink() {
-            fs_obj_list.push(FSObj::SymLink(SymLink {
-                path: obj_path,
-                size_in_bytes: 0,
             }));
         }
     }
