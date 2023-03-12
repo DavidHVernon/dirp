@@ -30,7 +30,7 @@ pub fn dirp_state_loop(
     let threadpool = ThreadPool::new(30);
     let mut dirp_state = DirHash::new();
 
-    scan_dir_path_in_threadpool(path, dirp_state_sender.clone(), &threadpool);
+    scan_dir_path_in_threadpool(path.clone(), dirp_state_sender.clone(), &threadpool);
 
     loop {
         match dirp_state_receiver.recv() {
@@ -39,9 +39,7 @@ pub fn dirp_state_loop(
                     process_dir_scan_message(dir, &mut dirp_state, &dirp_state_sender, &threadpool);
                 }
                 DirpStateMessage::GetStateRequest => {
-                    user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-                        dirp_state: dirp_state.clone(),
-                    }))?;
+                    process_get_state_request(&path, &mut dirp_state, &user_sender)?;
                 }
                 DirpStateMessage::NoOp(no_op) => {
                     println!("NoOp: {}.", no_op);
@@ -100,7 +98,54 @@ fn process_dir_scan_message(
     dirp_state.insert(dir.path.clone(), dir);
 }
 
-pub struct DirpState {
+fn process_get_state_request(
+    path: &PathBuf,
+    dirp_state: &mut DirHash,
+    user_sender: &Sender<UserMessage>,
+) -> Result<(), DirpError> {
+    let root_dir = dirp_state
+        .get(path)
+        .expect("internal error: could not find root element.");
+
+    let result_dir = build_result_tree(&root_dir, &dirp_state);
+
+    user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
+        dirp_state: result_dir,
+    }))?;
+
+    Ok(())
+}
+
+fn build_result_tree(dir: &Dir, dirp_state: &DirHash) -> Dir {
+    let mut result_dir = Dir {
+        path: dir.path.clone(),
+        size_in_bytes: dir.size_in_bytes,
+        dir_obj_list: FSObjList::new(),
+    };
+
+    for child_obj in &dir.dir_obj_list {
+        match child_obj {
+            FSObj::SymLink(sym_link) => result_dir
+                .dir_obj_list
+                .push(FSObj::SymLink((sym_link.clone()))),
+            FSObj::File(file) => result_dir.dir_obj_list.push(FSObj::File(file.clone())),
+            FSObj::Dir(dir) => assert!(false, "invalid state"),
+            FSObj::DirRef(dir_ref) => {
+                let dir = dirp_state
+                    .get(&dir_ref.path)
+                    .expect("internal error: could not find dir.");
+
+                result_dir
+                    .dir_obj_list
+                    .push(FSObj::Dir(build_result_tree(dir, dirp_state)))
+            }
+        }
+    }
+
+    result_dir
+}
+
+struct DirpState {
     user_receiver: Receiver<UserMessage>,
     dirp_state_sender: Sender<DirpStateMessage>,
     thread_handle: JoinHandle<()>,
@@ -174,7 +219,7 @@ mod tests {
         let dirp_state = DirpState::new(PathBuf::from("./test"));
         sleep(Duration::from_secs(1));
         let dirp_state_list = dirp_state.make_request(DirpStateMessage::GetStateRequest);
-        println!("{:#?}", dirp_state_list);
+
         dirp_state.quit();
 
         Ok(())

@@ -58,7 +58,7 @@ pub enum UserMessage {
 
 #[derive(Debug)]
 pub struct GetStateResponse {
-    pub dirp_state: DirHash,
+    pub dirp_state: Dir,
 }
 
 impl From<std::io::Error> for DirpError {
