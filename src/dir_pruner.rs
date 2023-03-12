@@ -39,7 +39,7 @@ pub fn dirp_state_loop(
     // Kick off timer.
     let message_timer = MessageTimer::new(dirp_state_sender.clone());
     let message_timer_guard =
-        message_timer.schedule_repeating(Duration::milliseconds(500), DirpStateMessage::Timer);
+        message_timer.schedule_repeating(Duration::milliseconds(50), DirpStateMessage::Timer);
 
     loop {
         match dirp_state_receiver.recv() {
@@ -185,6 +185,28 @@ impl DirpState {
         }
     }
 
+    pub fn run<F>(self, user_callback: F)
+    where
+        F: Fn(Dir) -> bool,
+    {
+        loop {
+            match self.user_receiver.recv() {
+                Ok(user_message) => match user_message {
+                    UserMessage::GetStateResponse(state_response) => {
+                        if !user_callback(state_response.dirp_state) {
+                            break;
+                        };
+                    }
+                    UserMessage::NoOp(_) => {}
+                },
+                Err(_) => {
+                    break;
+                }
+            }
+        }
+        self.quit();
+    }
+
     pub fn quit(self) {
         if let Err(error) = self.dirp_state_sender.send(DirpStateMessage::Quit) {
             panic!(
@@ -231,21 +253,19 @@ mod tests {
 
     #[test]
     fn test_dirp_state_task() -> Result<(), DirpError> {
-        let dirp_state = DirpState::new(PathBuf::from("./test"));
-        let dirp_state_list = dirp_state.recv();
-        if let UserMessage::GetStateResponse(dirp_state_list) = dirp_state_list {
+        DirpState::new(PathBuf::from("./test")).run(|dir| -> bool {
             let expected_hash = 5662441951356583153 as u64;
             let mut hasher = DefaultHasher::new();
-            dirp_state_list.hash(&mut hasher);
+            dir.hash(&mut hasher);
             let hash = hasher.finish();
 
-            println!("{:#?}", dirp_state_list.dirp_state);
+            println!("{:#?}", dir);
             println!("Hash: {}", hash);
 
             assert_eq!(expected_hash, hash, "Error: Unexpected result.");
-        }
 
-        dirp_state.quit();
+            false
+        });
 
         Ok(())
     }
