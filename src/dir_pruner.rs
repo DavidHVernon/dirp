@@ -2,9 +2,11 @@ use threadpool::ThreadPool;
 
 use crate::types::*;
 use crate::utils::*;
+use chrono::Duration;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, JoinHandle};
+use timer::MessageTimer;
 
 pub fn dirp_state_thread_spawn(
     path: PathBuf,
@@ -27,22 +29,34 @@ pub fn dirp_state_loop(
     dirp_state_sender: Sender<DirpStateMessage>,
     dirp_state_receiver: Receiver<DirpStateMessage>,
 ) -> Result<(), DirpError> {
-    let threadpool = ThreadPool::new(30);
     let mut dirp_state = DirHash::new();
+    let threadpool = ThreadPool::new(30);
+    let mut is_state_dirty = false;
 
+    // Initialize dir scan.
     scan_dir_path_in_threadpool(path.clone(), dirp_state_sender.clone(), &threadpool);
+
+    // Kick off timer.
+    let message_timer = MessageTimer::new(dirp_state_sender.clone());
+    let message_timer_guard =
+        message_timer.schedule_repeating(Duration::milliseconds(500), DirpStateMessage::Timer);
 
     loop {
         match dirp_state_receiver.recv() {
             Ok(message) => match message {
                 DirpStateMessage::DirScanMessage(dir) => {
                     process_dir_scan_message(dir, &mut dirp_state, &dirp_state_sender, &threadpool);
+                    is_state_dirty = true;
                 }
                 DirpStateMessage::GetStateRequest => {
                     process_get_state_request(&path, &mut dirp_state, &user_sender)?;
                 }
-                DirpStateMessage::NoOp(no_op) => {
-                    println!("NoOp: {}.", no_op);
+                DirpStateMessage::NoOp(no_op) => {}
+                DirpStateMessage::Timer => {
+                    if is_state_dirty {
+                        is_state_dirty = false;
+                        process_get_state_request(&path, &mut dirp_state, &user_sender)?;
+                    }
                 }
                 DirpStateMessage::Quit => break,
             },
@@ -218,7 +232,10 @@ mod tests {
     fn test_dirp_state_task() -> Result<(), DirpError> {
         let dirp_state = DirpState::new(PathBuf::from("./test"));
         sleep(Duration::from_secs(1));
-        let dirp_state_list = dirp_state.make_request(DirpStateMessage::GetStateRequest);
+        let dirp_state_list = dirp_state.recv();
+        if let UserMessage::GetStateResponse(dirp_state_list) = dirp_state_list {
+            println!("{:#?}", dirp_state_list.dirp_state);
+        }
 
         dirp_state.quit();
 

@@ -43,17 +43,19 @@ pub enum DirpError {
     SendErrorUserMessage(std::sync::mpsc::SendError<UserMessage>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DirpStateMessage {
     DirScanMessage(Dir),
     GetStateRequest,
     NoOp(bool),
+    Timer,
     Quit,
 }
 
 #[derive(Debug)]
 pub enum UserMessage {
     GetStateResponse(GetStateResponse),
+    NoOp(bool),
 }
 
 #[derive(Debug)]
