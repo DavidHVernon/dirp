@@ -3,7 +3,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::{error::Error, io};
+use std::{error::Error, io, path::PathBuf};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Layout},
@@ -13,17 +13,20 @@ use tui::{
 };
 
 pub struct App<'a> {
+    pub path: PathBuf,
     state: TableState,
     items: Vec<Vec<&'a str>>,
 }
 
 impl<'a> App<'a> {
-    pub fn new(items: Vec<Vec<&'a str>>) -> App<'a> {
+    pub fn new(path: PathBuf, items: Vec<Vec<&'a str>>) -> App<'a> {
         App {
+            path,
             state: TableState::default(),
             items,
         }
     }
+
     pub fn next(&mut self) {
         let i = match self.state.selected() {
             Some(i) => {
@@ -66,7 +69,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
 
     let selected_style = Style::default().add_modifier(Modifier::REVERSED);
     let normal_style = Style::default().bg(Color::Blue);
-    let header_cells = ["Header1", "Header2", "Header3"]
+    let header_cells = ["File", "%", "Size"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::LightGreen)));
     let header = Row::new(header_cells)
@@ -83,13 +86,13 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         let cells = item.iter().map(|c| Cell::from(*c));
         Row::new(cells).height(height as u16).bottom_margin(1)
     });
+
+    let path = app.path.to_string_lossy();
+    let path = format!(" {} ", path);
+
     let t = Table::new(rows)
         .header(header)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Directory Pruner "),
-        )
+        .block(Block::default().borders(Borders::ALL).title(path.as_str()))
         .highlight_style(selected_style)
         .highlight_symbol(">> ")
         .widths(&[

@@ -75,6 +75,26 @@ pub fn scan_dir_path(
     Ok(())
 }
 
+pub fn indent_to_level(level: u32) -> String {
+    let mut result = "".to_string();
+    for _ in 0..level {
+        result = result + "  ";
+    }
+    return result;
+}
+
+pub fn human_readable_bytes(bytes: u64) -> String {
+    if bytes < 1024 {
+        return format!("{} bytes", bytes);
+    } else if bytes < 1024 * 1024 {
+        return format!("{:.2} KB", bytes as f64 / 1024.0);
+    } else if bytes < 1024 * 1024 * 1024 {
+        return format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0));
+    } else {
+        return format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,8 +1,10 @@
 use crate::types::*;
+use crate::utils::*;
 use crate::DirpStateMessage::NoOp;
 use crate::UserMessage::GetStateResponse;
 use dir_pruner::DirpState;
 use std::{
+    cmp::Ordering,
     path::PathBuf,
     rc::Rc,
     sync::{mpsc::Sender, Arc, Mutex},
@@ -50,43 +52,27 @@ fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
         }
     }
 }
-fn indent_to_level(level: u32) -> String {
-    let mut result = "".to_string();
-    for _ in 0..level {
-        result = result + "    ";
-    }
-    return result;
-}
-
-fn human_readable_bytes(bytes: u64) -> String {
-    if bytes < 1024 {
-        return format!("{} bytes", bytes);
-    } else if bytes < 1024 * 1024 {
-        return format!("{:.2} KB", bytes as f64 / 1024.0);
-    } else if bytes < 1024 * 1024 * 1024 {
-        return format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0));
-    } else {
-        return format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0));
-    }
-}
 
 fn dirp_state_to_intermediate_state(
-    fs_obj: FSObj,
+    fs_obj: &mut FSObj,
     level: u32,
     i_state: &mut Vec<Vec<String>>,
 ) -> Option<()> {
-    let row = match fs_obj {
+    match fs_obj {
         FSObj::Dir(dir) => {
             let name = dir.path.file_name()?.to_string_lossy();
-            let name = format!("{}{}", indent_to_level(level), name);
+            let name = format!("{} {}", indent_to_level(level), name);
             let size = human_readable_bytes(dir.size_in_bytes);
             let file_size = human_readable_bytes(dir.size_in_bytes);
 
-            for sub_dir in dir.dir_obj_list {
-                dirp_state_to_intermediate_state(sub_dir, level, i_state);
-            }
+            i_state.push(vec![name, size, "".to_string()]);
 
-            vec![name, size, "".to_string()]
+            dir.dir_obj_list
+                .sort_by(|a, b| b.size_in_bytes().cmp(&a.size_in_bytes()));
+
+            for child_obj in &mut dir.dir_obj_list {
+                dirp_state_to_intermediate_state(child_obj, level + 1, i_state);
+            }
         }
         FSObj::DirRef(dir_ref) => {
             let name = dir_ref.path.file_name()?.to_string_lossy();
@@ -94,7 +80,7 @@ fn dirp_state_to_intermediate_state(
             let size = human_readable_bytes(dir_ref.size_in_bytes);
             let file_size = human_readable_bytes(dir_ref.size_in_bytes);
 
-            vec![name, size, "".to_string()]
+            i_state.push(vec![name, size, "".to_string()]);
         }
         FSObj::File(file) => {
             let name = file.path.file_name()?.to_string_lossy();
@@ -102,7 +88,7 @@ fn dirp_state_to_intermediate_state(
             let size = human_readable_bytes(file.size_in_bytes);
             let file_size = human_readable_bytes(file.size_in_bytes);
 
-            vec![name, size, "".to_string()]
+            i_state.push(vec![name, size, "".to_string()]);
         }
         FSObj::SymLink(sym_link) => {
             let name = sym_link.path.file_name()?.to_string_lossy();
@@ -110,10 +96,9 @@ fn dirp_state_to_intermediate_state(
             let size = human_readable_bytes(sym_link.size_in_bytes);
             let file_size = human_readable_bytes(sym_link.size_in_bytes);
 
-            vec![name, size, "".to_string()]
+            i_state.push(vec![name, size, "".to_string()]);
         }
     };
-    i_state.push(row);
 
     Some(())
 }
@@ -122,7 +107,7 @@ fn i_state_to_app_state<'a>(i_state: &'a Vec<Vec<String>>) -> Vec<Vec<&'a str>> 
     let mut result = Vec::new();
 
     for item in i_state {
-        result.push(vec![item[0].as_str(), item[1].as_str(), ""]);
+        result.push(vec![item[0].as_str(), "", item[1].as_str()]);
     }
 
     result
@@ -135,7 +120,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
-    let dirp_state = DirpState::new(PathBuf::from("./test"));
+    let path = PathBuf::from("./test");
+    let dirp_state = DirpState::new(path.clone());
 
     input_thread_spawn(dirp_state.user_sender);
 
@@ -146,14 +132,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // create app and run it
                     let mut i_state = Vec::new();
                     dirp_state_to_intermediate_state(
-                        FSObj::Dir(user_message.dirp_state),
-                        0,
+                        &mut FSObj::Dir(user_message.dirp_state),
+                        1,
                         &mut i_state,
                     )
                     .expect("err");
                     let app_state = i_state_to_app_state(&i_state);
 
-                    let app = App::new(app_state);
+                    let mut app = App::new(path.clone(), app_state);
                     let res = step_app(&mut terminal, app);
                 }
                 UserMessage::UserInputNext => {}

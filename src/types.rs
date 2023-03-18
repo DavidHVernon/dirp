@@ -35,6 +35,21 @@ pub struct DirRef {
     pub size_in_bytes: u64,
 }
 
+pub trait SizeInBytes {
+    fn size_in_bytes(&self) -> u64;
+}
+
+impl SizeInBytes for FSObj {
+    fn size_in_bytes(&self) -> u64 {
+        match self {
+            FSObj::Dir(dir) => dir.size_in_bytes,
+            FSObj::DirRef(dir_ref) => dir_ref.size_in_bytes,
+            FSObj::File(file) => file.size_in_bytes,
+            FSObj::SymLink(sym_link) => sym_link.size_in_bytes,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum DirpError {
     StdIoError(std::io::Error),
