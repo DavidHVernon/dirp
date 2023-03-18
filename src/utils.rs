@@ -22,32 +22,46 @@ pub fn scan_dir_path(
     // Create a list containing a FSObj for each directory item in the
     // specified dir
     let mut fs_obj_list = FSObjList::new();
-    for dir_entry in fs::read_dir(dir_path.clone())? {
-        let dir_entry = dir_entry?;
-        let obj_path = dir_entry.path();
-        let meta_data = dir_entry.metadata()?;
 
-        if dir_entry.file_name() == ".DS_Store" {
-            continue;
+    match fs::read_dir(dir_path.clone()) {
+        Ok(read_dir) => {
+            for dir_entry in read_dir {
+                let dir_entry = dir_entry?;
+                let obj_path = dir_entry.path();
+                let meta_data = dir_entry.metadata()?;
+
+                if obj_path.to_string_lossy() == "/Users/davidvernon/." {
+                    let brk = true;
+                }
+                if dir_entry.file_name() == ".DS_Store" {
+                    continue;
+                }
+
+                if obj_path.is_dir() {
+                    fs_obj_list.push(FSObj::DirRef(DirRef {
+                        path: obj_path.clone(),
+                        size_in_bytes: 0,
+                    }));
+                } else if obj_path.is_symlink() {
+                    // NOTE: Symlink needs to be checked before file because symlinks
+                    // are files.
+                    fs_obj_list.push(FSObj::SymLink(SymLink {
+                        path: obj_path,
+                        size_in_bytes: 0,
+                    }));
+                } else if obj_path.is_file() {
+                    fs_obj_list.push(FSObj::File(File {
+                        path: obj_path,
+                        size_in_bytes: meta_data.st_size(),
+                    }));
+                }
+            }
         }
-
-        if obj_path.is_dir() {
-            fs_obj_list.push(FSObj::DirRef(DirRef {
-                path: obj_path.clone(),
-                size_in_bytes: 0,
-            }));
-        } else if obj_path.is_symlink() {
-            // NOTE: Symlink needs to be checked before file because symlinks
-            // are files.
-            fs_obj_list.push(FSObj::SymLink(SymLink {
-                path: obj_path,
-                size_in_bytes: 0,
-            }));
-        } else if obj_path.is_file() {
-            fs_obj_list.push(FSObj::File(File {
-                path: obj_path,
-                size_in_bytes: meta_data.st_size(),
-            }));
+        Err(error) => {
+            println!(
+                "Cannot open file (ignoring): {}.",
+                dir_path.to_string_lossy()
+            );
         }
     }
 
