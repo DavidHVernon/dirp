@@ -55,7 +55,9 @@ pub enum DirpStateMessage {
 #[derive(Debug, Hash)]
 pub enum UserMessage {
     GetStateResponse(GetStateResponse),
-    NoOp(bool),
+    UserInputNext,
+    UserInputPrevious,
+    UserInputQuit,
 }
 
 #[derive(Debug, Hash)]
