@@ -1,8 +1,8 @@
 use crate::types::*;
 use crate::utils::*;
-use crate::DirpStateMessage::NoOp;
 use crate::UserMessage::GetStateResponse;
 use dir_pruner::DirpState;
+use std::str::FromStr;
 use std::{
     cmp::Ordering,
     path::PathBuf,
@@ -44,8 +44,10 @@ fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
                 }
                 KeyCode::Down => user_sender.send(UserMessage::UserInputNext)?,
                 KeyCode::Up => user_sender.send(UserMessage::UserInputPrevious)?,
-                KeyCode::Char('n') => user_sender.send(UserMessage::UserInputPrevious)?,
-                KeyCode::Char('p') => user_sender.send(UserMessage::UserInputNext)?,
+                KeyCode::Char('p') => user_sender.send(UserMessage::UserInputPrevious)?,
+                KeyCode::Char('n') => user_sender.send(UserMessage::UserInputNext)?,
+                KeyCode::Right => user_sender.send(UserMessage::OpenDir)?,
+                KeyCode::Left => user_sender.send(UserMessage::CloseDir)?,
                 _ => {}
             },
             _ => { /* Ignore all other forms of input. */ }
@@ -56,7 +58,7 @@ fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
 fn dirp_state_to_intermediate_state(
     fs_obj: &mut FSObj,
     level: u32,
-    i_state: &mut Vec<Vec<String>>,
+    i_state: &mut Vec<IntermediateState>,
 ) -> Option<()> {
     match fs_obj {
         FSObj::Dir(dir) => {
@@ -65,7 +67,10 @@ fn dirp_state_to_intermediate_state(
             let size = human_readable_bytes(dir.size_in_bytes);
             let file_size = human_readable_bytes(dir.size_in_bytes);
 
-            i_state.push(vec![name, size, "".to_string()]);
+            i_state.push(IntermediateState {
+                ui_row: vec![name, size, "".to_string()],
+                path: dir.path.clone(),
+            });
 
             dir.dir_obj_list
                 .sort_by(|a, b| b.size_in_bytes().cmp(&a.size_in_bytes()));
@@ -80,7 +85,10 @@ fn dirp_state_to_intermediate_state(
             let size = human_readable_bytes(dir_ref.size_in_bytes);
             let file_size = human_readable_bytes(dir_ref.size_in_bytes);
 
-            i_state.push(vec![name, size, "".to_string()]);
+            i_state.push(IntermediateState {
+                ui_row: vec![name, size, "".to_string()],
+                path: dir_ref.path.clone(),
+            });
         }
         FSObj::File(file) => {
             let name = file.path.file_name()?.to_string_lossy();
@@ -88,7 +96,10 @@ fn dirp_state_to_intermediate_state(
             let size = human_readable_bytes(file.size_in_bytes);
             let file_size = human_readable_bytes(file.size_in_bytes);
 
-            i_state.push(vec![name, size, "".to_string()]);
+            i_state.push(IntermediateState {
+                ui_row: vec![name, size, "".to_string()],
+                path: file.path.clone(),
+            });
         }
         FSObj::SymLink(sym_link) => {
             let name = sym_link.path.file_name()?.to_string_lossy();
@@ -96,21 +107,29 @@ fn dirp_state_to_intermediate_state(
             let size = human_readable_bytes(sym_link.size_in_bytes);
             let file_size = human_readable_bytes(sym_link.size_in_bytes);
 
-            i_state.push(vec![name, size, "".to_string()]);
+            i_state.push(IntermediateState {
+                ui_row: vec![name, size, "".to_string()],
+                path: sym_link.path.clone(),
+            });
         }
     };
 
     Some(())
 }
 
-fn i_state_to_app_state<'a>(i_state: &'a Vec<Vec<String>>) -> Vec<Vec<&'a str>> {
+fn i_state_to_app_state<'a>(i_state: &'a Vec<IntermediateState>) -> Vec<Vec<&'a str>> {
     let mut result = Vec::new();
 
     for item in i_state {
-        result.push(vec![item[0].as_str(), "", item[1].as_str()]);
+        result.push(vec![item.ui_row[0].as_str(), "", item.ui_row[1].as_str()]);
     }
 
     result
+}
+
+struct IntermediateState {
+    ui_row: Vec<String>,
+    path: PathBuf,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -123,33 +142,62 @@ fn main() -> Result<(), Box<dyn Error>> {
     let path = PathBuf::from("./test");
     let dirp_state = DirpState::new(path.clone());
 
-    input_thread_spawn(dirp_state.user_sender);
+    input_thread_spawn(dirp_state.user_sender.clone());
+
+    let mut i_state = Vec::new();
+    let mut state = 0;
 
     loop {
+        let mut do_next = false;
+        let mut do_prev = false;
+
         match dirp_state.user_receiver.recv() {
             Ok(user_message) => match user_message {
                 UserMessage::GetStateResponse(user_message) => {
                     // create app and run it
-                    let mut i_state = Vec::new();
+                    i_state.clear();
                     dirp_state_to_intermediate_state(
                         &mut FSObj::Dir(user_message.dirp_state),
                         1,
                         &mut i_state,
                     )
                     .expect("err");
-                    let app_state = i_state_to_app_state(&i_state);
-
-                    let mut app = App::new(path.clone(), app_state);
-                    let res = step_app(&mut terminal, app);
                 }
-                UserMessage::UserInputNext => {}
-                UserMessage::UserInputPrevious => {}
+                UserMessage::UserInputNext => {
+                    do_next = true;
+                }
+                UserMessage::UserInputPrevious => {
+                    do_prev = true;
+                }
+                UserMessage::OpenDir => {
+                    dirp_state.send(DirpStateMessage::OpenDir(i_state[state].path.clone()));
+                }
+                UserMessage::CloseDir => {
+                    dirp_state.send(DirpStateMessage::CloseDir(i_state[state].path.clone()));
+                }
                 UserMessage::UserInputQuit => break,
             },
             Err(error) => {
                 panic!("recv() error: {}", error);
             }
         }
+
+        let app_state = i_state_to_app_state(&i_state);
+        let mut app = App::new(path.clone(), app_state);
+
+        app.set_selected(state);
+        if do_next {
+            app.next();
+        }
+        if do_prev {
+            app.previous();
+        }
+        state = app.selected();
+
+        let res = step_app(&mut terminal, app);
+
+        do_next = false;
+        do_prev = false;
     }
 
     // restore terminal

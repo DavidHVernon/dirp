@@ -24,7 +24,7 @@ pub fn dirp_state_thread_spawn(
 }
 
 pub fn dirp_state_loop(
-    path: PathBuf,
+    root_path: PathBuf,
     user_sender: Sender<UserMessage>,
     dirp_state_sender: Sender<DirpStateMessage>,
     dirp_state_receiver: Receiver<DirpStateMessage>,
@@ -34,7 +34,7 @@ pub fn dirp_state_loop(
     let mut is_state_dirty = false;
 
     // Initialize dir scan.
-    scan_dir_path_in_threadpool(path.clone(), dirp_state_sender.clone(), &threadpool);
+    scan_dir_path_in_threadpool(root_path.clone(), dirp_state_sender.clone(), &threadpool);
 
     // Kick off timer.
     let message_timer = MessageTimer::new(dirp_state_sender.clone());
@@ -49,13 +49,36 @@ pub fn dirp_state_loop(
                     is_state_dirty = true;
                 }
                 DirpStateMessage::GetStateRequest => {
-                    process_get_state_request(&path, &mut dirp_state, &user_sender)?;
+                    process_get_state_request(&root_path, &mut dirp_state, &user_sender)?;
                 }
-                DirpStateMessage::NoOp(no_op) => {}
                 DirpStateMessage::Timer => {
                     if is_state_dirty {
                         is_state_dirty = false;
-                        process_get_state_request(&path, &mut dirp_state, &user_sender)?;
+                        process_get_state_request(&root_path, &mut dirp_state, &user_sender)?;
+                    }
+                }
+                DirpStateMessage::OpenDir(path) => {
+                    let mut dir_path = None;
+                    if let Some(dir) = dirp_state.get_mut(&path) {
+                        dir.is_open = true;
+                        dir_path = Some(dir.path.clone());
+                    }
+                    if let Some(dir_path) = dir_path {
+                        user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
+                            dirp_state: build_result_tree(&root_path, &mut dirp_state),
+                        }))?;
+                    }
+                }
+                DirpStateMessage::CloseDir(path) => {
+                    let mut dir_path = None;
+                    if let Some(dir) = dirp_state.get_mut(&path) {
+                        dir.is_open = false;
+                        dir_path = Some(dir.path.clone());
+                    }
+                    if let Some(dir_path) = dir_path {
+                        user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
+                            dirp_state: build_result_tree(&root_path, &mut dirp_state),
+                        }))?;
                     }
                 }
                 DirpStateMessage::Quit => break,
@@ -117,45 +140,39 @@ fn process_get_state_request(
     dirp_state: &mut DirHash,
     user_sender: &Sender<UserMessage>,
 ) -> Result<(), DirpError> {
-    let root_dir = dirp_state
-        .get(path)
-        .expect("internal error: could not find root element.");
-
-    let result_dir = build_result_tree(&root_dir, &dirp_state);
-
     user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-        dirp_state: result_dir,
+        dirp_state: build_result_tree(&path, &dirp_state),
     }))?;
 
     Ok(())
 }
 
-fn build_result_tree(dir: &Dir, dirp_state: &DirHash) -> Dir {
-    let mut result_dir = Dir {
-        path: dir.path.clone(),
-        size_in_bytes: dir.size_in_bytes,
-        dir_obj_list: FSObjList::new(),
-    };
+fn build_result_tree(path: &PathBuf, dirp_state: &DirHash) -> Dir {
+    let mut result_dir = dirp_state.get(path).expect("internal error").clone();
 
-    for child_obj in &dir.dir_obj_list {
-        match child_obj {
-            FSObj::SymLink(sym_link) => result_dir
-                .dir_obj_list
-                .push(FSObj::SymLink((sym_link.clone()))),
-            FSObj::File(file) => result_dir.dir_obj_list.push(FSObj::File(file.clone())),
-            FSObj::Dir(dir) => assert!(false, "invalid state"),
-            FSObj::DirRef(dir_ref) => {
-                let dir = dirp_state.get(&dir_ref.path).expect(&format!(
-                    "Internal Error: Could not find dir: {}",
-                    dir_ref.path.to_str().expect("strange file name")
-                ));
-
-                result_dir
-                    .dir_obj_list
-                    .push(FSObj::Dir(build_result_tree(dir, dirp_state)))
+    let mut new_dir_obj_list = Vec::<FSObj>::new();
+    if result_dir.is_open {
+        for child_obj in &result_dir.dir_obj_list {
+            match child_obj {
+                FSObj::Dir(dir) => {
+                    assert!(false, "Internal Error");
+                }
+                FSObj::DirRef(dir_ref) => {
+                    if dir_ref.is_open {
+                        new_dir_obj_list
+                            .push(FSObj::Dir(build_result_tree(&dir_ref.path, dirp_state)));
+                    }
+                }
+                FSObj::File(fs_obj) => {
+                    new_dir_obj_list.push(FSObj::File(fs_obj.clone()));
+                }
+                FSObj::SymLink(fs_obj) => {
+                    new_dir_obj_list.push(FSObj::SymLink(fs_obj.clone()));
+                }
             }
         }
     }
+    result_dir.dir_obj_list = new_dir_obj_list;
 
     result_dir
 }
@@ -224,7 +241,6 @@ impl DirpState {
         self.send(request);
         self.recv()
     }
-
 }
 
 #[cfg(test)]

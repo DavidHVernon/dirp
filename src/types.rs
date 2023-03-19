@@ -25,6 +25,7 @@ pub struct SymLink {
 #[derive(Debug, Clone, Hash)]
 pub struct Dir {
     pub path: PathBuf,
+    pub is_open: bool,
     pub size_in_bytes: u64,
     pub dir_obj_list: FSObjList,
 }
@@ -32,6 +33,7 @@ pub struct Dir {
 #[derive(Debug, Clone, Hash)]
 pub struct DirRef {
     pub path: PathBuf,
+    pub is_open: bool,
     pub size_in_bytes: u64,
 }
 
@@ -62,7 +64,8 @@ pub enum DirpError {
 pub enum DirpStateMessage {
     DirScanMessage(Dir),
     GetStateRequest,
-    NoOp(bool),
+    OpenDir(PathBuf),
+    CloseDir(PathBuf),
     Timer,
     Quit,
 }
@@ -72,6 +75,8 @@ pub enum UserMessage {
     GetStateResponse(GetStateResponse),
     UserInputNext,
     UserInputPrevious,
+    CloseDir,
+    OpenDir,
     UserInputQuit,
 }
 

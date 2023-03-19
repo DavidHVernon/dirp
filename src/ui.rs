@@ -27,6 +27,14 @@ impl<'a> App<'a> {
         }
     }
 
+    pub fn selected(&mut self) -> usize {
+        self.state.selected().expect("We always want a selection.")
+    }
+
+    pub fn set_selected(&mut self, state: usize) {
+        self.state.select(Some(state));
+    }
+
     pub fn next(&mut self) {
         let i = match self.state.selected() {
             Some(i) => {
