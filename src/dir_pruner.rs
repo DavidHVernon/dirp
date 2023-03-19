@@ -34,7 +34,12 @@ pub fn dirp_state_loop(
     let mut is_state_dirty = false;
 
     // Initialize dir scan.
-    scan_dir_path_in_threadpool(root_path.clone(), dirp_state_sender.clone(), &threadpool);
+    scan_dir_path_in_threadpool(
+        root_path.clone(),
+        true,
+        dirp_state_sender.clone(),
+        &threadpool,
+    );
 
     // Kick off timer.
     let message_timer = MessageTimer::new(dirp_state_sender.clone());
@@ -120,6 +125,7 @@ fn process_dir_scan_message(
                 // Recurse
                 scan_dir_path_in_threadpool(
                     dir_ref.path.clone(),
+                    false,
                     dirp_state_sender.clone(),
                     &threadpool,
                 );
@@ -161,6 +167,7 @@ fn process_get_state_request(
 
 fn build_result_tree(path: &PathBuf, dirp_state: &DirHash) -> Dir {
     let mut root_dir = dirp_state.get(path).expect("internal error");
+
     _build_result_tree(path, dirp_state, root_dir.size_in_bytes as f64)
 }
 
@@ -176,13 +183,11 @@ fn _build_result_tree(path: &PathBuf, dirp_state: &DirHash, total_bytes: f64) ->
                     assert!(false, "Internal Error");
                 }
                 FSObj::DirRef(dir_ref) => {
-                    if dir_ref.is_open {
-                        new_dir_obj_list.push(FSObj::Dir(_build_result_tree(
-                            &dir_ref.path,
-                            dirp_state,
-                            total_bytes,
-                        )));
-                    }
+                    new_dir_obj_list.push(FSObj::Dir(_build_result_tree(
+                        &dir_ref.path,
+                        dirp_state,
+                        total_bytes,
+                    )));
                 }
                 FSObj::File(fs_obj) => {
                     let mut fs_obj = fs_obj.clone();

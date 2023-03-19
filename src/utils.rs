@@ -5,11 +5,12 @@ use threadpool::ThreadPool;
 
 pub fn scan_dir_path_in_threadpool(
     dir_path: PathBuf,
+    is_open: bool,
     dirp_state_sender: Sender<DirpStateMessage>,
     threadpool: &ThreadPool,
 ) {
     threadpool.execute(move || {
-        if let Err(error) = scan_dir_path(dir_path, dirp_state_sender) {
+        if let Err(error) = scan_dir_path(dir_path, is_open, dirp_state_sender) {
             panic!("scan_dir_path error: {:#?}", error);
         }
     });
@@ -17,6 +18,7 @@ pub fn scan_dir_path_in_threadpool(
 
 pub fn scan_dir_path(
     dir_path: PathBuf,
+    is_open: bool,
     dirp_state_sender: Sender<DirpStateMessage>,
 ) -> Result<(), DirpError> {
     // Create a list containing a FSObj for each directory item in the
@@ -30,9 +32,6 @@ pub fn scan_dir_path(
                 let obj_path = dir_entry.path();
                 let meta_data = dir_entry.metadata()?;
 
-                if obj_path.to_string_lossy() == "/Users/davidvernon/." {
-                    let brk = true;
-                }
                 if dir_entry.file_name() == ".DS_Store" {
                     continue;
                 }
@@ -40,7 +39,7 @@ pub fn scan_dir_path(
                 if obj_path.is_dir() {
                     fs_obj_list.push(FSObj::DirRef(DirRef {
                         path: obj_path.clone(),
-                        is_open: true,
+                        is_open,
                         size_in_bytes: 0,
                         percent: 0,
                     }));
@@ -72,7 +71,7 @@ pub fn scan_dir_path(
     // Sent it to the state managing thread.
     dirp_state_sender.send(DirpStateMessage::DirScanMessage(Dir {
         path: dir_path,
-        is_open: true,
+        is_open,
         size_in_bytes: 0,
         percent: 0,
         dir_obj_list: fs_obj_list,
