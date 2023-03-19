@@ -55,15 +55,19 @@ fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
     }
 }
 
-fn dirp_state_to_intermediate_state(
+fn dirp_state_to_i_state(
     fs_obj: &mut FSObj,
     level: u32,
     i_state: &mut Vec<IntermediateState>,
 ) -> Option<()> {
     match fs_obj {
         FSObj::Dir(dir) => {
+            let flipper = match dir.is_open {
+                true => "v",
+                false => ">",
+            };
             let name = dir.path.file_name()?.to_string_lossy();
-            let name = format!("{} {}", indent_to_level(level), name);
+            let name = format!("{}{} {}", indent_to_level(level), flipper, name);
             let size = human_readable_bytes(dir.size_in_bytes);
             let file_size = human_readable_bytes(dir.size_in_bytes);
 
@@ -76,12 +80,12 @@ fn dirp_state_to_intermediate_state(
                 .sort_by(|a, b| b.size_in_bytes().cmp(&a.size_in_bytes()));
 
             for child_obj in &mut dir.dir_obj_list {
-                dirp_state_to_intermediate_state(child_obj, level + 1, i_state);
+                dirp_state_to_i_state(child_obj, level + 1, i_state);
             }
         }
         FSObj::DirRef(dir_ref) => {
             let name = dir_ref.path.file_name()?.to_string_lossy();
-            let name = format!("{}{}", indent_to_level(level), name);
+            let name = format!("{}> {}", indent_to_level(level), name);
             let size = human_readable_bytes(dir_ref.size_in_bytes);
             let file_size = human_readable_bytes(dir_ref.size_in_bytes);
 
@@ -92,7 +96,7 @@ fn dirp_state_to_intermediate_state(
         }
         FSObj::File(file) => {
             let name = file.path.file_name()?.to_string_lossy();
-            let name = format!("{}{}", indent_to_level(level), name);
+            let name = format!("{}  {}", indent_to_level(level), name);
             let size = human_readable_bytes(file.size_in_bytes);
             let file_size = human_readable_bytes(file.size_in_bytes);
 
@@ -103,7 +107,7 @@ fn dirp_state_to_intermediate_state(
         }
         FSObj::SymLink(sym_link) => {
             let name = sym_link.path.file_name()?.to_string_lossy();
-            let name = format!("{}{}", indent_to_level(level), name);
+            let name = format!("{}  {}", indent_to_level(level), name);
             let size = human_readable_bytes(sym_link.size_in_bytes);
             let file_size = human_readable_bytes(sym_link.size_in_bytes);
 
@@ -156,7 +160,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 UserMessage::GetStateResponse(user_message) => {
                     // create app and run it
                     i_state.clear();
-                    dirp_state_to_intermediate_state(
+                    dirp_state_to_i_state(
                         &mut FSObj::Dir(user_message.dirp_state),
                         1,
                         &mut i_state,

@@ -79,8 +79,8 @@ pub fn scan_dir_path(
 
 pub fn indent_to_level(level: u32) -> String {
     let mut result = "".to_string();
-    for _ in 0..level {
-        result = result + "  ";
+    for _ in 1..level {
+        result = result + "   ";
     }
     return result;
 }

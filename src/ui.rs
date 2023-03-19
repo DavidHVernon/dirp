@@ -102,7 +102,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .header(header)
         .block(Block::default().borders(Borders::ALL).title(path.as_str()))
         .highlight_style(selected_style)
-        .highlight_symbol(">> ")
+        .highlight_symbol("   ")
         .widths(&[
             Constraint::Percentage(50),
             Constraint::Length(30),
