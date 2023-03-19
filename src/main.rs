@@ -74,7 +74,7 @@ fn dirp_state_to_i_state(
             let percent = format!("{}%", dir.percent);
 
             i_state.push(IntermediateState {
-                ui_row: vec![name, size, percent],
+                ui_row: vec![name, percent, size],
                 path: dir.path.clone(),
             });
 
@@ -93,7 +93,7 @@ fn dirp_state_to_i_state(
             let percent = format!("{}%", dir_ref.percent);
 
             i_state.push(IntermediateState {
-                ui_row: vec![name, size, percent],
+                ui_row: vec![name, percent, size],
                 path: dir_ref.path.clone(),
             });
         }
@@ -105,7 +105,7 @@ fn dirp_state_to_i_state(
             let percent = format!("{}%", file.percent);
 
             i_state.push(IntermediateState {
-                ui_row: vec![name, size, percent],
+                ui_row: vec![name, percent, size],
                 path: file.path.clone(),
             });
         }
@@ -117,7 +117,7 @@ fn dirp_state_to_i_state(
             let percent = format!("{}%", sym_link.percent);
 
             i_state.push(IntermediateState {
-                ui_row: vec![name, size, percent],
+                ui_row: vec![name, percent, size],
                 path: sym_link.path.clone(),
             });
         }
