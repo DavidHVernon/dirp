@@ -42,6 +42,7 @@ pub fn scan_dir_path(
                         path: obj_path.clone(),
                         is_open: true,
                         size_in_bytes: 0,
+                        percent: 0,
                     }));
                 } else if obj_path.is_symlink() {
                     // NOTE: Symlink needs to be checked before file because symlinks
@@ -49,11 +50,13 @@ pub fn scan_dir_path(
                     fs_obj_list.push(FSObj::SymLink(SymLink {
                         path: obj_path,
                         size_in_bytes: 0,
+                        percent: 0,
                     }));
                 } else if obj_path.is_file() {
                     fs_obj_list.push(FSObj::File(File {
                         path: obj_path,
                         size_in_bytes: meta_data.st_size(),
+                        percent: 0,
                     }));
                 }
             }
@@ -71,6 +74,7 @@ pub fn scan_dir_path(
         path: dir_path,
         is_open: true,
         size_in_bytes: 0,
+        percent: 0,
         dir_obj_list: fs_obj_list,
     }))?;
 

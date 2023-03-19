@@ -71,9 +71,10 @@ fn dirp_state_to_i_state(
             let name = format!("{}{} {}", indent_to_level(level), flipper, name);
             let size = human_readable_bytes(dir.size_in_bytes);
             let file_size = human_readable_bytes(dir.size_in_bytes);
+            let percent = format!("{}%", dir.percent);
 
             i_state.push(IntermediateState {
-                ui_row: vec![name, size, "".to_string()],
+                ui_row: vec![name, size, percent],
                 path: dir.path.clone(),
             });
 
@@ -89,9 +90,10 @@ fn dirp_state_to_i_state(
             let name = format!("{}> {}", indent_to_level(level), name);
             let size = human_readable_bytes(dir_ref.size_in_bytes);
             let file_size = human_readable_bytes(dir_ref.size_in_bytes);
+            let percent = format!("{}%", dir_ref.percent);
 
             i_state.push(IntermediateState {
-                ui_row: vec![name, size, "".to_string()],
+                ui_row: vec![name, size, percent],
                 path: dir_ref.path.clone(),
             });
         }
@@ -100,9 +102,10 @@ fn dirp_state_to_i_state(
             let name = format!("{}  {}", indent_to_level(level), name);
             let size = human_readable_bytes(file.size_in_bytes);
             let file_size = human_readable_bytes(file.size_in_bytes);
+            let percent = format!("{}%", file.percent);
 
             i_state.push(IntermediateState {
-                ui_row: vec![name, size, "".to_string()],
+                ui_row: vec![name, size, percent],
                 path: file.path.clone(),
             });
         }
@@ -111,9 +114,10 @@ fn dirp_state_to_i_state(
             let name = format!("{}  {}", indent_to_level(level), name);
             let size = human_readable_bytes(sym_link.size_in_bytes);
             let file_size = human_readable_bytes(sym_link.size_in_bytes);
+            let percent = format!("{}%", sym_link.percent);
 
             i_state.push(IntermediateState {
-                ui_row: vec![name, size, "".to_string()],
+                ui_row: vec![name, size, percent],
                 path: sym_link.path.clone(),
             });
         }
@@ -126,7 +130,11 @@ fn i_state_to_app_state<'a>(i_state: &'a Vec<IntermediateState>) -> Vec<Vec<&'a 
     let mut result = Vec::new();
 
     for item in i_state {
-        result.push(vec![item.ui_row[0].as_str(), "", item.ui_row[1].as_str()]);
+        result.push(vec![
+            item.ui_row[0].as_str(),
+            item.ui_row[1].as_str(),
+            item.ui_row[2].as_str(),
+        ]);
     }
 
     result

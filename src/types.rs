@@ -15,11 +15,13 @@ pub enum FSObj {
 pub struct File {
     pub path: PathBuf,
     pub size_in_bytes: u64,
+    pub percent: u8,
 }
 #[derive(Debug, Clone, Hash)]
 pub struct SymLink {
     pub path: PathBuf,
     pub size_in_bytes: u64,
+    pub percent: u8,
 }
 
 #[derive(Debug, Clone, Hash)]
@@ -27,6 +29,7 @@ pub struct Dir {
     pub path: PathBuf,
     pub is_open: bool,
     pub size_in_bytes: u64,
+    pub percent: u8,
     pub dir_obj_list: FSObjList,
 }
 
@@ -35,6 +38,7 @@ pub struct DirRef {
     pub path: PathBuf,
     pub is_open: bool,
     pub size_in_bytes: u64,
+    pub percent: u8,
 }
 
 pub trait SizeInBytes {

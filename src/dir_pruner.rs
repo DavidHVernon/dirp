@@ -160,7 +160,13 @@ fn process_get_state_request(
 }
 
 fn build_result_tree(path: &PathBuf, dirp_state: &DirHash) -> Dir {
+    let mut root_dir = dirp_state.get(path).expect("internal error");
+    _build_result_tree(path, dirp_state, root_dir.size_in_bytes as f64)
+}
+
+fn _build_result_tree(path: &PathBuf, dirp_state: &DirHash, total_bytes: f64) -> Dir {
     let mut result_dir = dirp_state.get(path).expect("internal error").clone();
+    result_dir.percent = ((result_dir.size_in_bytes as f64 / total_bytes) * 100.0) as u8;
 
     let mut new_dir_obj_list = Vec::<FSObj>::new();
     if result_dir.is_open {
@@ -171,15 +177,22 @@ fn build_result_tree(path: &PathBuf, dirp_state: &DirHash) -> Dir {
                 }
                 FSObj::DirRef(dir_ref) => {
                     if dir_ref.is_open {
-                        new_dir_obj_list
-                            .push(FSObj::Dir(build_result_tree(&dir_ref.path, dirp_state)));
+                        new_dir_obj_list.push(FSObj::Dir(_build_result_tree(
+                            &dir_ref.path,
+                            dirp_state,
+                            total_bytes,
+                        )));
                     }
                 }
                 FSObj::File(fs_obj) => {
-                    new_dir_obj_list.push(FSObj::File(fs_obj.clone()));
+                    let mut fs_obj = fs_obj.clone();
+                    fs_obj.percent = ((fs_obj.size_in_bytes as f64 / total_bytes) * 100.0) as u8;
+                    new_dir_obj_list.push(FSObj::File(fs_obj));
                 }
                 FSObj::SymLink(fs_obj) => {
-                    new_dir_obj_list.push(FSObj::SymLink(fs_obj.clone()));
+                    let mut fs_obj = fs_obj.clone();
+                    fs_obj.percent = ((fs_obj.size_in_bytes as f64 / total_bytes) * 100.0) as u8;
+                    new_dir_obj_list.push(FSObj::SymLink(fs_obj));
                 }
             }
         }
