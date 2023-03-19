@@ -44,10 +44,11 @@ fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
                 }
                 KeyCode::Down => user_sender.send(UserMessage::UserInputNext)?,
                 KeyCode::Up => user_sender.send(UserMessage::UserInputPrevious)?,
+                KeyCode::Left => user_sender.send(UserMessage::UserInputCloseDir)?,
+                KeyCode::Right => user_sender.send(UserMessage::UserInputOpenDir)?,
                 KeyCode::Char('p') => user_sender.send(UserMessage::UserInputPrevious)?,
                 KeyCode::Char('n') => user_sender.send(UserMessage::UserInputNext)?,
-                KeyCode::Right => user_sender.send(UserMessage::OpenDir)?,
-                KeyCode::Left => user_sender.send(UserMessage::CloseDir)?,
+                KeyCode::Char('f') => user_sender.send(UserMessage::UserInputToggleDir)?,
                 _ => {}
             },
             _ => { /* Ignore all other forms of input. */ }
@@ -173,11 +174,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 UserMessage::UserInputPrevious => {
                     do_prev = true;
                 }
-                UserMessage::OpenDir => {
+                UserMessage::UserInputOpenDir => {
                     dirp_state.send(DirpStateMessage::OpenDir(i_state[state].path.clone()));
                 }
-                UserMessage::CloseDir => {
+                UserMessage::UserInputCloseDir => {
                     dirp_state.send(DirpStateMessage::CloseDir(i_state[state].path.clone()));
+                }
+                UserMessage::UserInputToggleDir => {
+                    dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].path.clone()));
                 }
                 UserMessage::UserInputQuit => break,
             },

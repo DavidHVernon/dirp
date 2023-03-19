@@ -66,6 +66,7 @@ pub enum DirpStateMessage {
     GetStateRequest,
     OpenDir(PathBuf),
     CloseDir(PathBuf),
+    ToggleDir(PathBuf),
     Timer,
     Quit,
 }
@@ -75,8 +76,9 @@ pub enum UserMessage {
     GetStateResponse(GetStateResponse),
     UserInputNext,
     UserInputPrevious,
-    CloseDir,
-    OpenDir,
+    UserInputCloseDir,
+    UserInputOpenDir,
+    UserInputToggleDir,
     UserInputQuit,
 }
 

@@ -81,6 +81,18 @@ pub fn dirp_state_loop(
                         }))?;
                     }
                 }
+                DirpStateMessage::ToggleDir(path) => {
+                    let mut dir_path = None;
+                    if let Some(dir) = dirp_state.get_mut(&path) {
+                        dir.is_open = !dir.is_open;
+                        dir_path = Some(dir.path.clone());
+                    }
+                    if let Some(dir_path) = dir_path {
+                        user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
+                            dirp_state: build_result_tree(&root_path, &mut dirp_state),
+                        }))?;
+                    }
+                }
                 DirpStateMessage::Quit => break,
             },
             Err(_error) => {
