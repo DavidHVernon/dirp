@@ -16,12 +16,14 @@ pub struct File {
     pub path: PathBuf,
     pub size_in_bytes: u64,
     pub percent: u8,
+    pub is_marked: bool,
 }
 #[derive(Debug, Clone, Hash)]
 pub struct SymLink {
     pub path: PathBuf,
     pub size_in_bytes: u64,
     pub percent: u8,
+    pub is_marked: bool,
 }
 
 #[derive(Debug, Clone, Hash)]
@@ -30,6 +32,7 @@ pub struct Dir {
     pub is_open: bool,
     pub size_in_bytes: u64,
     pub percent: u8,
+    pub is_marked: bool,
     pub dir_obj_list: FSObjList,
 }
 
@@ -39,6 +42,7 @@ pub struct DirRef {
     pub is_open: bool,
     pub size_in_bytes: u64,
     pub percent: u8,
+    pub is_marked: bool,
 }
 
 pub trait SizeInBytes {
@@ -71,6 +75,7 @@ pub enum DirpStateMessage {
     OpenDir(PathBuf),
     CloseDir(PathBuf),
     ToggleDir(PathBuf),
+    ToggleMarkPath(PathBuf),
     Timer,
     Quit,
 }
@@ -83,6 +88,7 @@ pub enum UserMessage {
     UserInputCloseDir,
     UserInputOpenDir,
     UserInputToggleDir,
+    UserInputToggleMarkPath(PathBuf),
     UserInputQuit,
 }
 

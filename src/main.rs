@@ -191,6 +191,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 UserMessage::UserInputToggleDir => {
                     dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].path.clone()));
                 }
+                UserMessage::UserInputToggleMarkPath(path) => {
+                    dirp_state.send(DirpStateMessage::ToggleMarkPath(
+                        i_state[state].path.clone(),
+                    ));
+                }
                 UserMessage::UserInputQuit => break,
             },
             Err(error) => {
