@@ -99,15 +99,18 @@ pub fn dirp_state_loop(
                     }
                 }
                 DirpStateMessage::ToggleMarkPath(path) => {
+                    // Check that the dir actually exists.
                     let mut dir_path = None;
                     if let Some(dir) = dirp_state.get_mut(&path) {
-                        dir.is_marked = !dir.is_marked;
                         dir_path = Some(dir.path.clone());
                     }
                     if let Some(dir_path) = dir_path {
+                        mark_all_children(path, &mut dirp_state);
                         user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
                             dirp_state: build_result_tree(&root_path, &mut dirp_state),
                         }))?;
+                    } else {
+                        panic!("Internal consistency error.");
                     }
                 }
                 DirpStateMessage::Quit => break,
