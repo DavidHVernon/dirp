@@ -109,8 +109,7 @@ pub fn human_readable_bytes(bytes: u64) -> String {
 mod tests {
     use super::*;
     use std::collections::hash_map::DefaultHasher;
-    use std::collections::HashMap;
-    use std::hash::{self, Hash, Hasher};
+    use std::hash::{Hash, Hasher};
     use std::sync::mpsc::channel;
     use std::thread::sleep;
     use std::time::Duration;
@@ -120,13 +119,13 @@ mod tests {
         let threadpool = ThreadPool::new(30);
         let (sender, receiver) = channel();
 
-        scan_dir_path_in_threadpool(PathBuf::from("./test/a"), sender.clone(), &threadpool);
+        scan_dir_path_in_threadpool(PathBuf::from("./test/a"), true, sender.clone(), &threadpool);
 
         sleep(Duration::from_secs(1));
 
         let dirp_state_message = receiver.recv()?;
         if let DirpStateMessage::DirScanMessage(dir) = dirp_state_message {
-            let expected_hash = 69190488897742781 as u64;
+            let expected_hash = 10393733214208568773 as u64;
             let mut hasher = DefaultHasher::new();
             dir.hash(&mut hasher);
             let hash = hasher.finish();

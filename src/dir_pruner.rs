@@ -367,24 +367,27 @@ impl DirpState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    use std::{collections::hash_map::DefaultHasher, thread::sleep, time::Duration};
 
     #[test]
     fn test_dirp_state_task() -> Result<(), DirpError> {
-        DirpState::new(PathBuf::from("./test")).run(|dir| -> bool {
-            let expected_hash = 5662441951356583153 as u64;
+        let dirp_state = DirpState::new(PathBuf::from("./test"));
+        if let UserMessage::GetStateResponse(state_response) = dirp_state.recv() {
+            let expected_hash = 5543617640467760095 as u64;
             let mut hasher = DefaultHasher::new();
+            let dir = state_response.dirp_state;
             dir.hash(&mut hasher);
             let hash = hasher.finish();
 
             println!("{:#?}", dir);
             println!("Hash: {}", hash);
 
-            // assert_eq!(expected_hash, hash, "Error: Unexpected result.");
-
-            false
-        });
+            assert_eq!(expected_hash, hash, "Error: Unexpected result.");
+        } else {
+            assert!(false, "Unexpected user message.");
+        }
+        dirp_state.quit();
 
         Ok(())
     }
