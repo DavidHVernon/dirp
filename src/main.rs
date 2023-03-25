@@ -56,8 +56,8 @@ fn dirp_state_to_i_state(
     match fs_obj {
         FSObj::Dir(dir) => {
             let flipper = match dir.is_open {
-                true => "v",
-                false => ">",
+                true => "⏷",
+                false => "⏵",
             };
             let name = dir.path.file_name()?.to_string_lossy();
             let name = format!("{}{} {}", indent_to_level(level), flipper, name);
