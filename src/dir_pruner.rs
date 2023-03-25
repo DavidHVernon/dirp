@@ -222,6 +222,100 @@ fn _build_result_tree(path: &PathBuf, dirp_state: &DirHash, total_bytes: f64) ->
     result_dir
 }
 
+fn mark_all_children(path: PathBuf, dirp_state: &mut DirHash) {
+    let mut dir = dirp_state
+        .get(&path)
+        .expect("Internal state error.")
+        .clone();
+    dir.is_marked = true;
+    for fs_obj in &mut dir.dir_obj_list {
+        match fs_obj {
+            FSObj::Dir(dir) => {
+                panic!("Internal state error.");
+            }
+            FSObj::DirRef(dir_ref) => {
+                mark_all_children(dir_ref.path.clone(), dirp_state);
+            }
+            FSObj::File(file) => {
+                file.is_marked = true;
+            }
+            FSObj::SymLink(sym_link) => {
+                sym_link.is_marked = true;
+            }
+        }
+    }
+    dirp_state.insert(path, dir);
+}
+
+fn do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) {
+    if let None = _do_mark_deep(path, is_marked, dirp_state) {
+        assert!(false, "Internal error in do_mark_deep");
+    }
+}
+
+fn _do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) -> Option<()> {
+    // Find 'path' in 'dirp_state'.
+
+    if let Some(dir) = dirp_state.get_mut(&path) {
+        // path resolves to a dir.
+
+        dir.is_marked = is_marked;
+        let mut child_path_list = Vec::new();
+        for child in &mut dir.dir_obj_list {
+            match child {
+                FSObj::Dir(dir) => {
+                    child_path_list.push(dir.path.clone());
+                }
+                FSObj::DirRef(dir_ref) => {
+                    child_path_list.push(dir_ref.path.clone());
+                }
+                FSObj::File(file) => {
+                    child_path_list.push(file.path.clone());
+                }
+                FSObj::SymLink(sym_link) => {
+                    child_path_list.push(sym_link.path.clone());
+                }
+            }
+        }
+        for child_path in child_path_list {
+            _do_mark_deep(child_path, is_marked, dirp_state)?;
+        }
+
+        Some(())
+    } else {
+        // path must be a file or a sym_link.
+        // Look for parent, then search parent.
+
+        let parent_dir = dirp_state.get_mut(path.parent()?)?;
+        for child in &mut parent_dir.dir_obj_list {
+            match child {
+                FSObj::File(file) => {
+                    if file.path == path {
+                        // 'path' is a file.
+                        file.is_marked = is_marked;
+
+                        return Some(());
+                    }
+                }
+                FSObj::SymLink(sym_link) => {
+                    if sym_link.path == path {
+                        // 'path' is a sym link.
+                        sym_link.is_marked = is_marked;
+
+                        return Some(());
+                    }
+                }
+                _ => {
+                    // Do nothing.
+                }
+            }
+        }
+
+        assert!(false, "path {:#?} not found in dirp_state.", &path,);
+        None
+    }
+}
+
 pub struct DirpState {
     pub user_receiver: Receiver<UserMessage>,
     pub user_sender: Sender<UserMessage>,
