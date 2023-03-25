@@ -31,25 +31,24 @@ fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
     loop {
         match event::read()? {
             Event::Key(key) => match key.code {
+                KeyCode::Down => user_sender.send(UserMessage::UserInputNext)?,
+                KeyCode::Up => user_sender.send(UserMessage::UserInputPrevious)?,
+                KeyCode::Left => user_sender.send(UserMessage::UserInputCloseDir)?,
+                KeyCode::Right => user_sender.send(UserMessage::UserInputOpenDir)?,
+                KeyCode::Delete => user_sender.send(UserMessage::UserInputToggleMarkPath)?,
+                KeyCode::Backspace => user_sender.send(UserMessage::UserInputToggleMarkPath)?,
+
+                KeyCode::Char('p') => user_sender.send(UserMessage::UserInputPrevious)?,
+                KeyCode::Char('n') => user_sender.send(UserMessage::UserInputNext)?,
+                KeyCode::Char('f') => user_sender.send(UserMessage::UserInputToggleDir)?,
+                KeyCode::Char('d') => user_sender.send(UserMessage::UserInputMarkPath)?,
+                KeyCode::Char('u') => user_sender.send(UserMessage::UserInputUnmarkPath)?,
+
                 KeyCode::Char('q') => {
                     user_sender.send(UserMessage::UserInputQuit)?;
                     return Ok(());
                 }
-                KeyCode::Down => user_sender.send(UserMessage::UserInputNext)?,
-                KeyCode::Up => user_sender.send(UserMessage::UserInputPrevious)?,
 
-                KeyCode::Left => user_sender.send(UserMessage::UserInputCloseDir)?,
-                KeyCode::Right => user_sender.send(UserMessage::UserInputOpenDir)?,
-
-                KeyCode::Char('p') => user_sender.send(UserMessage::UserInputPrevious)?,
-                KeyCode::Char('n') => user_sender.send(UserMessage::UserInputNext)?,
-
-                KeyCode::Char('f') => user_sender.send(UserMessage::UserInputToggleDir)?,
-
-                KeyCode::Char('d') => user_sender.send(UserMessage::UserInputMarkPath)?,
-                KeyCode::Char('u') => user_sender.send(UserMessage::UserInputUnmarkPath)?,
-                KeyCode::Delete => user_sender.send(UserMessage::UserInputToggleMarkPath)?,
-                KeyCode::Backspace => user_sender.send(UserMessage::UserInputToggleMarkPath)?,
                 _ => {}
             },
             _ => { /* Ignore all other forms of input. */ }
