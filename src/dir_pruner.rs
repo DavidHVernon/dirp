@@ -76,7 +76,7 @@ pub fn dirp_state_loop(
                 }
                 DirpStateMessage::ToggleDir(path) => {
                     if let Some(dir) = dirp_state.get_mut(&path) {
-                        dir.is_marked = !dir.is_marked;
+                        dir.is_open = !dir.is_open;
                         is_state_dirty = true;
                     }
                 }
