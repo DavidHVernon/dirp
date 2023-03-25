@@ -31,21 +31,25 @@ fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
     loop {
         match event::read()? {
             Event::Key(key) => match key.code {
-                KeyCode::Down => user_sender.send(UserMessage::UserInputNext)?,
-                KeyCode::Up => user_sender.send(UserMessage::UserInputPrevious)?,
-                KeyCode::Left => user_sender.send(UserMessage::UserInputCloseDir)?,
-                KeyCode::Right => user_sender.send(UserMessage::UserInputOpenDir)?,
-                KeyCode::Delete => user_sender.send(UserMessage::UserInputToggleMarkPath)?,
-                KeyCode::Backspace => user_sender.send(UserMessage::UserInputToggleMarkPath)?,
+                KeyCode::Down => user_sender.send(UserMessage::Next)?,
+                KeyCode::Up => user_sender.send(UserMessage::Previous)?,
+                KeyCode::Left => user_sender.send(UserMessage::CloseDir)?,
+                KeyCode::Right => user_sender.send(UserMessage::OpenDir)?,
+                KeyCode::Delete => user_sender.send(UserMessage::ToggleMarkPath)?,
+                KeyCode::Backspace => user_sender.send(UserMessage::ToggleMarkPath)?,
 
-                KeyCode::Char('p') => user_sender.send(UserMessage::UserInputPrevious)?,
-                KeyCode::Char('n') => user_sender.send(UserMessage::UserInputNext)?,
-                KeyCode::Char('f') => user_sender.send(UserMessage::UserInputToggleDir)?,
-                KeyCode::Char('d') => user_sender.send(UserMessage::UserInputMarkPath)?,
-                KeyCode::Char('u') => user_sender.send(UserMessage::UserInputUnmarkPath)?,
+                KeyCode::Char('p') => user_sender.send(UserMessage::Previous)?,
+                KeyCode::Char('n') => user_sender.send(UserMessage::Next)?,
+                KeyCode::Char('f') => user_sender.send(UserMessage::ToggleDir)?,
+                KeyCode::Char('d') => user_sender.send(UserMessage::MarkPath)?,
+                KeyCode::Char('u') => user_sender.send(UserMessage::UnmarkPath)?,
+
+                KeyCode::Char('x') => user_sender.send(UserMessage::RemoveMarked)?,
+                KeyCode::Char('y') => user_sender.send(UserMessage::ConfirmRemoval)?,
+                KeyCode::Char('n') => user_sender.send(UserMessage::CancelRemoval)?,
 
                 KeyCode::Char('q') => {
-                    user_sender.send(UserMessage::UserInputQuit)?;
+                    user_sender.send(UserMessage::Quit)?;
                     return Ok(());
                 }
 
@@ -164,6 +168,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut i_state = Vec::new();
     let mut state = 0;
 
+    let mut do_remove_marked = false;
+
     loop {
         let mut do_next = false;
         let mut do_prev = false;
@@ -180,33 +186,45 @@ fn main() -> Result<(), Box<dyn Error>> {
                     )
                     .expect("err");
                 }
-                UserMessage::UserInputNext => {
+                UserMessage::Next => {
                     do_next = true;
                 }
-                UserMessage::UserInputPrevious => {
+                UserMessage::Previous => {
                     do_prev = true;
                 }
-                UserMessage::UserInputOpenDir => {
+                UserMessage::OpenDir => {
                     dirp_state.send(DirpStateMessage::OpenDir(i_state[state].path.clone()));
                 }
-                UserMessage::UserInputCloseDir => {
+                UserMessage::CloseDir => {
                     dirp_state.send(DirpStateMessage::CloseDir(i_state[state].path.clone()));
                 }
-                UserMessage::UserInputToggleDir => {
+                UserMessage::ToggleDir => {
                     dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].path.clone()));
                 }
-                UserMessage::UserInputMarkPath => {
+                UserMessage::MarkPath => {
                     dirp_state.send(DirpStateMessage::MarkPath(i_state[state].path.clone()));
                 }
-                UserMessage::UserInputUnmarkPath => {
+                UserMessage::UnmarkPath => {
                     dirp_state.send(DirpStateMessage::UnmarkPath(i_state[state].path.clone()));
                 }
-                UserMessage::UserInputToggleMarkPath => {
+                UserMessage::ToggleMarkPath => {
                     dirp_state.send(DirpStateMessage::ToggleMarkPath(
                         i_state[state].path.clone(),
                     ));
                 }
-                UserMessage::UserInputQuit => break,
+                UserMessage::RemoveMarked => {
+                    do_remove_marked = true;
+                }
+                UserMessage::ConfirmRemoval => {
+                    if do_remove_marked {
+                        dirp_state.send(DirpStateMessage::RemoveMarked);
+                        break;
+                    }
+                }
+                UserMessage::CancelRemoval => {
+                    do_remove_marked = false;
+                }
+                UserMessage::Quit => break,
             },
             Err(error) => {
                 panic!("recv() error: {}", error);

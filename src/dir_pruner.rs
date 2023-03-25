@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 use timer::MessageTimer;
+use trash;
 
 pub fn dirp_state_thread_spawn(
     path: PathBuf,
@@ -96,6 +97,11 @@ pub fn dirp_state_loop(
                         panic!("shit");
                     }
                 }
+                DirpStateMessage::RemoveMarked => {
+                    if let Err(error) = remove_marked_files(root_path.clone(), &dirp_state) {
+                        panic!("Error Removing Files: {:#?}", error);
+                    }
+                }
                 DirpStateMessage::Quit => break,
             },
             Err(_error) => {
@@ -157,24 +163,29 @@ fn process_get_state_request(
     user_sender: &Sender<UserMessage>,
 ) -> Result<(), DirpError> {
     user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-        dirp_state: build_result_tree(&path, &dirp_state),
+        dirp_state: build_result_tree(&path, false, &dirp_state),
     }))?;
 
     Ok(())
 }
 
-fn build_result_tree(path: &PathBuf, dirp_state: &DirHash) -> Dir {
+fn build_result_tree(path: &PathBuf, include_all: bool, dirp_state: &DirHash) -> Dir {
     let root_dir = dirp_state.get(path).expect("internal error");
 
-    _build_result_tree(path, dirp_state, root_dir.size_in_bytes as f64)
+    _build_result_tree(path, include_all, dirp_state, root_dir.size_in_bytes as f64)
 }
 
-fn _build_result_tree(path: &PathBuf, dirp_state: &DirHash, total_bytes: f64) -> Dir {
+fn _build_result_tree(
+    path: &PathBuf,
+    include_all: bool,
+    dirp_state: &DirHash,
+    total_bytes: f64,
+) -> Dir {
     let mut result_dir = dirp_state.get(path).expect("internal error").clone();
     result_dir.percent = ((result_dir.size_in_bytes as f64 / total_bytes) * 100.0) as u8;
 
     let mut new_dir_obj_list = Vec::<FSObj>::new();
-    if result_dir.is_open {
+    if result_dir.is_open || include_all {
         for child_obj in &result_dir.dir_obj_list {
             match child_obj {
                 FSObj::Dir(_) => {
@@ -183,6 +194,7 @@ fn _build_result_tree(path: &PathBuf, dirp_state: &DirHash, total_bytes: f64) ->
                 FSObj::DirRef(dir_ref) => {
                     new_dir_obj_list.push(FSObj::Dir(_build_result_tree(
                         &dir_ref.path,
+                        include_all,
                         dirp_state,
                         total_bytes,
                     )));
@@ -203,6 +215,39 @@ fn _build_result_tree(path: &PathBuf, dirp_state: &DirHash, total_bytes: f64) ->
     result_dir.dir_obj_list = new_dir_obj_list;
 
     result_dir
+}
+
+fn is_path_marked(path: PathBuf, dirp_state: &DirHash) -> Option<bool> {
+    if let Some(dir) = dirp_state.get(&path) {
+        Some(dir.is_marked)
+    } else {
+        let parent_dir = dirp_state.get(path.parent()?)?;
+        for child in &parent_dir.dir_obj_list {
+            match child {
+                FSObj::Dir(obj) => {
+                    if obj.path == path {
+                        return Some(obj.is_marked);
+                    }
+                }
+                FSObj::DirRef(obj) => {
+                    if obj.path == path {
+                        return Some(obj.is_marked);
+                    }
+                }
+                FSObj::File(obj) => {
+                    if obj.path == path {
+                        return Some(obj.is_marked);
+                    }
+                }
+                FSObj::SymLink(obj) => {
+                    if obj.path == path {
+                        return Some(obj.is_marked);
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 fn do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) {
@@ -274,37 +319,40 @@ fn _do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) -> Op
     }
 }
 
-fn is_path_marked(path: PathBuf, dirp_state: &DirHash) -> Option<bool> {
-    if let Some(dir) = dirp_state.get(&path) {
-        Some(dir.is_marked)
-    } else {
-        let parent_dir = dirp_state.get(path.parent()?)?;
-        for child in &parent_dir.dir_obj_list {
-            match child {
-                FSObj::Dir(obj) => {
-                    if obj.path == path {
-                        return Some(obj.is_marked);
-                    }
-                }
-                FSObj::DirRef(obj) => {
-                    if obj.path == path {
-                        return Some(obj.is_marked);
-                    }
-                }
-                FSObj::File(obj) => {
-                    if obj.path == path {
-                        return Some(obj.is_marked);
-                    }
-                }
-                FSObj::SymLink(obj) => {
-                    if obj.path == path {
-                        return Some(obj.is_marked);
-                    }
+fn remove_marked_files(path: PathBuf, dirp_state: &DirHash) -> Result<(), DirpError> {
+    _remove_marked_files(FSObj::Dir(build_result_tree(&path, true, dirp_state)))
+}
+
+fn _remove_marked_files(obj: FSObj) -> Result<(), DirpError> {
+    match obj {
+        FSObj::Dir(dir) => {
+            if dir.is_marked {
+                trash::delete(&dir.path)?;
+                println!("Moved to Trash: {}", dir.path.to_string_lossy());
+            } else {
+                for child in dir.dir_obj_list {
+                    _remove_marked_files(child);
                 }
             }
         }
-        None
+        FSObj::DirRef(dir_ref) => {
+            panic!("Internal Error");
+        }
+        FSObj::File(file) => {
+            if file.is_marked {
+                trash::delete(&file.path)?;
+                println!("Moved to Trash: {}", file.path.to_string_lossy());
+            }
+        }
+        FSObj::SymLink(sym_link) => {
+            if sym_link.is_marked {
+                trash::delete(&sym_link.path)?;
+                println!("Moved to Trash: {}", sym_link.path.to_string_lossy());
+            }
+        }
     }
+
+    Ok(())
 }
 
 pub struct DirpState {

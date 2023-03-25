@@ -66,6 +66,7 @@ pub enum DirpError {
     RecvError(std::sync::mpsc::RecvError),
     SendErrorDirpStateMessage(std::sync::mpsc::SendError<DirpStateMessage>),
     SendErrorUserMessage(std::sync::mpsc::SendError<UserMessage>),
+    TrashError(trash::Error),
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +79,7 @@ pub enum DirpStateMessage {
     MarkPath(PathBuf),
     UnmarkPath(PathBuf),
     ToggleMarkPath(PathBuf),
+    RemoveMarked,
     Timer,
     Quit,
 }
@@ -85,15 +87,18 @@ pub enum DirpStateMessage {
 #[derive(Debug, Hash)]
 pub enum UserMessage {
     GetStateResponse(GetStateResponse),
-    UserInputNext,
-    UserInputPrevious,
-    UserInputCloseDir,
-    UserInputOpenDir,
-    UserInputToggleDir,
-    UserInputMarkPath,
-    UserInputUnmarkPath,
-    UserInputToggleMarkPath,
-    UserInputQuit,
+    Next,
+    Previous,
+    CloseDir,
+    OpenDir,
+    ToggleDir,
+    MarkPath,
+    UnmarkPath,
+    ToggleMarkPath,
+    RemoveMarked,
+    ConfirmRemoval,
+    CancelRemoval,
+    Quit,
 }
 
 #[derive(Debug, Hash)]
@@ -122,5 +127,11 @@ impl From<std::sync::mpsc::SendError<DirpStateMessage>> for DirpError {
 impl From<std::sync::mpsc::SendError<UserMessage>> for DirpError {
     fn from(error: std::sync::mpsc::SendError<UserMessage>) -> Self {
         DirpError::SendErrorUserMessage(error)
+    }
+}
+
+impl From<trash::Error> for DirpError {
+    fn from(error: trash::Error) -> Self {
+        DirpError::TrashError(error)
     }
 }
