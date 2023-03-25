@@ -80,9 +80,13 @@ pub fn dirp_state_loop(
                         is_state_dirty = true;
                     }
                 }
-                DirpStateMessage::ToggleMarkPath(path) => {
-                    mark_all_children(path, &mut dirp_state);
+                DirpStateMessage::MarkPath(path) => {
+                    do_mark_deep(path, true, &mut dirp_state);
                     is_state_dirty = true;
+                }
+                DirpStateMessage::UnmarkPath(path) => {
+                    do_mark_deep(path, true, &mut dirp_state);
+                    is_state_dirty = false;
                 }
                 DirpStateMessage::Quit => break,
             },
@@ -191,31 +195,6 @@ fn _build_result_tree(path: &PathBuf, dirp_state: &DirHash, total_bytes: f64) ->
     result_dir.dir_obj_list = new_dir_obj_list;
 
     result_dir
-}
-
-fn mark_all_children(path: PathBuf, dirp_state: &mut DirHash) {
-    let mut dir = dirp_state
-        .get(&path)
-        .expect("Internal state error.")
-        .clone();
-    dir.is_marked = true;
-    for fs_obj in &mut dir.dir_obj_list {
-        match fs_obj {
-            FSObj::Dir(_) => {
-                panic!("Internal state error.");
-            }
-            FSObj::DirRef(dir_ref) => {
-                mark_all_children(dir_ref.path.clone(), dirp_state);
-            }
-            FSObj::File(file) => {
-                file.is_marked = true;
-            }
-            FSObj::SymLink(sym_link) => {
-                sym_link.is_marked = true;
-            }
-        }
-    }
-    dirp_state.insert(path, dir);
 }
 
 fn do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) {
