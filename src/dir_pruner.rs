@@ -363,7 +363,7 @@ mod tests {
         println!("Toggle ./test/e and ./test/e/f open, then mark ./test/e and test result.");
         dirp_state.send(DirpStateMessage::OpenDir(PathBuf::from("./test/e")));
         dirp_state.send(DirpStateMessage::OpenDir(PathBuf::from("./test/e/f")));
-        dirp_state.send(DirpStateMessage::ToggleMarkPath(PathBuf::from("./test/e")));
+        dirp_state.send(DirpStateMessage::MarkPath(PathBuf::from("./test/e")));
         if let UserMessage::GetStateResponse(state_response) = dirp_state.recv() {
             let expected_hash = 1716204932036142087 as u64;
             let mut hasher = DefaultHasher::new();
