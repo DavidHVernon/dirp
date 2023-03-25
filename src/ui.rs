@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf};
+use std::{cell, io, path::PathBuf};
 use tui::{
     backend::Backend,
     layout::{Constraint, Layout},
@@ -10,11 +10,16 @@ use tui::{
 pub struct App<'a> {
     pub path: PathBuf,
     state: TableState,
-    items: Vec<Vec<&'a str>>,
+    items: Vec<AppRow<'a>>,
+}
+
+pub struct AppRow<'a> {
+    pub display_data: Vec<&'a str>,
+    pub is_marked: bool,
 }
 
 impl<'a> App<'a> {
-    pub fn new(path: PathBuf, items: Vec<Vec<&'a str>>) -> App<'a> {
+    pub fn new(path: PathBuf, items: Vec<AppRow<'a>>) -> App<'a> {
         App {
             path,
             state: TableState::default(),
@@ -71,22 +76,32 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .split(f.size());
 
     let selected_style = Style::default().add_modifier(Modifier::REVERSED);
-    let normal_style = Style::default().bg(Color::Blue);
+    let normal_header_style = Style::default().bg(Color::Blue);
+    let normal_header_style = Style::default().bg(Color::Blue);
+    let normal_style = Style::default();
+    let disabled_style = Style::default().add_modifier(Modifier::DIM);
     let header_cells = ["File", "%", "Size"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::LightGreen)));
     let header = Row::new(header_cells)
-        .style(normal_style)
+        .style(normal_header_style)
         .height(1)
         .bottom_margin(1);
     let rows = app.items.iter().map(|item| {
         let height = item
+            .display_data
             .iter()
             .map(|content| content.chars().filter(|c| *c == '\n').count())
             .max()
             .unwrap_or(0)
             + 1;
-        let cells = item.iter().map(|c| Cell::from(*c));
+        let cells = item.display_data.iter().map(|c| {
+            if item.is_marked {
+                Cell::from(*c).style(disabled_style)
+            } else {
+                Cell::from(*c).style(normal_style)
+            }
+        });
         Row::new(cells).height(height as u16).bottom_margin(1)
     });
 

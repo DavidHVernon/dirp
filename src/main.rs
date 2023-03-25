@@ -2,6 +2,7 @@ use crate::types::*;
 use crate::utils::*;
 use dir_pruner::DirpState;
 use std::{path::PathBuf, sync::mpsc::Sender, thread};
+use ui::AppRow;
 use ui::{step_app, App};
 
 use crossterm::{
@@ -46,8 +47,9 @@ fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
                 KeyCode::Char('f') => user_sender.send(UserMessage::UserInputToggleDir)?,
 
                 KeyCode::Char('d') => user_sender.send(UserMessage::UserInputMarkPath)?,
-                KeyCode::Char('u') => user_sender.send(UserMessage::UserInputToggleDir)?,
-
+                KeyCode::Char('u') => user_sender.send(UserMessage::UserInputUnmarkPath)?,
+                KeyCode::Delete => user_sender.send(UserMessage::UserInputToggleMarkPath)?,
+                KeyCode::Backspace => user_sender.send(UserMessage::UserInputToggleMarkPath)?,
                 _ => {}
             },
             _ => { /* Ignore all other forms of input. */ }
@@ -73,6 +75,7 @@ fn dirp_state_to_i_state(
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
+                is_marked: dir.is_marked,
                 path: dir.path.clone(),
             });
 
@@ -91,6 +94,7 @@ fn dirp_state_to_i_state(
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
+                is_marked: dir_ref.is_marked,
                 path: dir_ref.path.clone(),
             });
         }
@@ -102,6 +106,7 @@ fn dirp_state_to_i_state(
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
+                is_marked: file.is_marked,
                 path: file.path.clone(),
             });
         }
@@ -113,6 +118,7 @@ fn dirp_state_to_i_state(
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
+                is_marked: sym_link.is_marked,
                 path: sym_link.path.clone(),
             });
         }
@@ -121,15 +127,18 @@ fn dirp_state_to_i_state(
     Some(())
 }
 
-fn i_state_to_app_state<'a>(i_state: &'a Vec<IntermediateState>) -> Vec<Vec<&'a str>> {
+fn i_state_to_app_state<'a>(i_state: &'a Vec<IntermediateState>) -> Vec<AppRow<'a>> {
     let mut result = Vec::new();
 
     for item in i_state {
-        result.push(vec![
-            item.ui_row[0].as_str(),
-            item.ui_row[1].as_str(),
-            item.ui_row[2].as_str(),
-        ]);
+        result.push(AppRow {
+            display_data: vec![
+                item.ui_row[0].as_str(),
+                item.ui_row[1].as_str(),
+                item.ui_row[2].as_str(),
+            ],
+            is_marked: item.is_marked,
+        });
     }
 
     result
@@ -137,6 +146,7 @@ fn i_state_to_app_state<'a>(i_state: &'a Vec<IntermediateState>) -> Vec<Vec<&'a 
 
 struct IntermediateState {
     ui_row: Vec<String>,
+    is_marked: bool,
     path: PathBuf,
 }
 
@@ -191,6 +201,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
                 UserMessage::UserInputUnmarkPath => {
                     dirp_state.send(DirpStateMessage::UnmarkPath(i_state[state].path.clone()));
+                }
+                UserMessage::UserInputToggleMarkPath => {
+                    dirp_state.send(DirpStateMessage::ToggleMarkPath(
+                        i_state[state].path.clone(),
+                    ));
                 }
                 UserMessage::UserInputQuit => break,
             },

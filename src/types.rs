@@ -77,6 +77,7 @@ pub enum DirpStateMessage {
     ToggleDir(PathBuf),
     MarkPath(PathBuf),
     UnmarkPath(PathBuf),
+    ToggleMarkPath(PathBuf),
     Timer,
     Quit,
 }
@@ -91,6 +92,7 @@ pub enum UserMessage {
     UserInputToggleDir,
     UserInputMarkPath,
     UserInputUnmarkPath,
+    UserInputToggleMarkPath,
     UserInputQuit,
 }
 

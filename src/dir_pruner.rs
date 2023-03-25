@@ -85,8 +85,16 @@ pub fn dirp_state_loop(
                     is_state_dirty = true;
                 }
                 DirpStateMessage::UnmarkPath(path) => {
-                    do_mark_deep(path, true, &mut dirp_state);
-                    is_state_dirty = false;
+                    do_mark_deep(path, false, &mut dirp_state);
+                    is_state_dirty = true;
+                }
+                DirpStateMessage::ToggleMarkPath(path) => {
+                    if let Some(is_path_marked) = is_path_marked(path.clone(), &dirp_state) {
+                        do_mark_deep(path, !is_path_marked, &mut dirp_state);
+                        is_state_dirty = true;
+                    } else {
+                        panic!("shit");
+                    }
                 }
                 DirpStateMessage::Quit => break,
             },
@@ -262,6 +270,39 @@ fn _do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) -> Op
         }
 
         assert!(false, "path {:#?} not found in dirp_state.", &path,);
+        None
+    }
+}
+
+fn is_path_marked(path: PathBuf, dirp_state: &DirHash) -> Option<bool> {
+    if let Some(dir) = dirp_state.get(&path) {
+        Some(dir.is_marked)
+    } else {
+        let parent_dir = dirp_state.get(path.parent()?)?;
+        for child in &parent_dir.dir_obj_list {
+            match child {
+                FSObj::Dir(obj) => {
+                    if obj.path == path {
+                        return Some(obj.is_marked);
+                    }
+                }
+                FSObj::DirRef(obj) => {
+                    if obj.path == path {
+                        return Some(obj.is_marked);
+                    }
+                }
+                FSObj::File(obj) => {
+                    if obj.path == path {
+                        return Some(obj.is_marked);
+                    }
+                }
+                FSObj::SymLink(obj) => {
+                    if obj.path == path {
+                        return Some(obj.is_marked);
+                    }
+                }
+            }
+        }
         None
     }
 }
