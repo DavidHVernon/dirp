@@ -65,35 +65,24 @@ pub fn dirp_state_loop(
                 DirpStateMessage::OpenDir(path) => {
                     if let Some(dir) = dirp_state.get_mut(&path) {
                         dir.is_open = true;
-
-                        user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-                            dirp_state: build_result_tree(&root_path, &mut dirp_state),
-                        }))?;
+                        is_state_dirty = true;
                     }
                 }
                 DirpStateMessage::CloseDir(path) => {
                     if let Some(dir) = dirp_state.get_mut(&path) {
                         dir.is_open = false;
-
-                        user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-                            dirp_state: build_result_tree(&root_path, &mut dirp_state),
-                        }))?;
+                        is_state_dirty = true;
                     }
                 }
                 DirpStateMessage::ToggleDir(path) => {
                     if let Some(dir) = dirp_state.get_mut(&path) {
                         dir.is_marked = !dir.is_marked;
-
-                        user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-                            dirp_state: build_result_tree(&root_path, &mut dirp_state),
-                        }))?;
+                        is_state_dirty = true;
                     }
                 }
                 DirpStateMessage::ToggleMarkPath(path) => {
                     mark_all_children(path, &mut dirp_state);
-                    user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-                        dirp_state: build_result_tree(&root_path, &mut dirp_state),
-                    }))?;
+                    is_state_dirty = true;
                 }
                 DirpStateMessage::Quit => break,
             },
@@ -373,8 +362,11 @@ mod tests {
     #[test]
     fn test_dirp_state_task() -> Result<(), DirpError> {
         let dirp_state = DirpState::new(PathBuf::from("./test"));
+
+        // Test initial dirp state.
+        println!("Test initial dirp state.");
         if let UserMessage::GetStateResponse(state_response) = dirp_state.recv() {
-            let expected_hash = 5543617640467760095 as u64;
+            let expected_hash = 1916964086373338034 as u64;
             let mut hasher = DefaultHasher::new();
             let dir = state_response.dirp_state;
             dir.hash(&mut hasher);
@@ -387,6 +379,27 @@ mod tests {
         } else {
             assert!(false, "Unexpected user message.");
         }
+
+        // Toggle ./test/e and ./test/e/f open, then mark ./test/e and test result.
+        println!("Toggle ./test/e and ./test/e/f open, then mark ./test/e and test result.");
+        dirp_state.send(DirpStateMessage::OpenDir(PathBuf::from("./test/e")));
+        dirp_state.send(DirpStateMessage::OpenDir(PathBuf::from("./test/e/f")));
+        dirp_state.send(DirpStateMessage::ToggleMarkPath(PathBuf::from("./test/e")));
+        if let UserMessage::GetStateResponse(state_response) = dirp_state.recv() {
+            let expected_hash = 1716204932036142087 as u64;
+            let mut hasher = DefaultHasher::new();
+            let dir = state_response.dirp_state;
+            dir.hash(&mut hasher);
+            let hash = hasher.finish();
+
+            println!("{:#?}", dir);
+            println!("Hash: {}", hash);
+
+            assert_eq!(expected_hash, hash, "Error: Unexpected result.");
+        } else {
+            assert!(false, "Unexpected user message 2.");
+        }
+
         dirp_state.quit();
 
         Ok(())
