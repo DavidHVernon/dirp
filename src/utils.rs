@@ -65,8 +65,9 @@ pub fn scan_dir_path(
         }
         Err(error) => {
             println!(
-                "Cannot open file (ignoring): {}.",
-                dir_path.to_string_lossy()
+                "Cannot open file: {} (ignoring) Err: {}.",
+                dir_path.to_string_lossy(),
+                error
             );
         }
     }

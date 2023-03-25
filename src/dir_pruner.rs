@@ -43,7 +43,7 @@ pub fn dirp_state_loop(
 
     // Kick off timer.
     let message_timer = MessageTimer::new(dirp_state_sender.clone());
-    let message_timer_guard =
+    let _message_timer_guard =
         message_timer.schedule_repeating(Duration::milliseconds(50), DirpStateMessage::Timer);
 
     loop {
@@ -63,55 +63,37 @@ pub fn dirp_state_loop(
                     }
                 }
                 DirpStateMessage::OpenDir(path) => {
-                    let mut dir_path = None;
                     if let Some(dir) = dirp_state.get_mut(&path) {
                         dir.is_open = true;
-                        dir_path = Some(dir.path.clone());
-                    }
-                    if let Some(dir_path) = dir_path {
+
                         user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
                             dirp_state: build_result_tree(&root_path, &mut dirp_state),
                         }))?;
                     }
                 }
                 DirpStateMessage::CloseDir(path) => {
-                    let mut dir_path = None;
                     if let Some(dir) = dirp_state.get_mut(&path) {
                         dir.is_open = false;
-                        dir_path = Some(dir.path.clone());
-                    }
-                    if let Some(dir_path) = dir_path {
+
                         user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
                             dirp_state: build_result_tree(&root_path, &mut dirp_state),
                         }))?;
                     }
                 }
                 DirpStateMessage::ToggleDir(path) => {
-                    let mut dir_path = None;
                     if let Some(dir) = dirp_state.get_mut(&path) {
                         dir.is_marked = !dir.is_marked;
-                        dir_path = Some(dir.path.clone());
-                    }
-                    if let Some(dir_path) = dir_path {
+
                         user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
                             dirp_state: build_result_tree(&root_path, &mut dirp_state),
                         }))?;
                     }
                 }
                 DirpStateMessage::ToggleMarkPath(path) => {
-                    // Check that the dir actually exists.
-                    let mut dir_path = None;
-                    if let Some(dir) = dirp_state.get_mut(&path) {
-                        dir_path = Some(dir.path.clone());
-                    }
-                    if let Some(dir_path) = dir_path {
-                        mark_all_children(path, &mut dirp_state);
-                        user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-                            dirp_state: build_result_tree(&root_path, &mut dirp_state),
-                        }))?;
-                    } else {
-                        panic!("Internal consistency error.");
-                    }
+                    mark_all_children(path, &mut dirp_state);
+                    user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
+                        dirp_state: build_result_tree(&root_path, &mut dirp_state),
+                    }))?;
                 }
                 DirpStateMessage::Quit => break,
             },
@@ -181,7 +163,7 @@ fn process_get_state_request(
 }
 
 fn build_result_tree(path: &PathBuf, dirp_state: &DirHash) -> Dir {
-    let mut root_dir = dirp_state.get(path).expect("internal error");
+    let root_dir = dirp_state.get(path).expect("internal error");
 
     _build_result_tree(path, dirp_state, root_dir.size_in_bytes as f64)
 }
@@ -194,7 +176,7 @@ fn _build_result_tree(path: &PathBuf, dirp_state: &DirHash, total_bytes: f64) ->
     if result_dir.is_open {
         for child_obj in &result_dir.dir_obj_list {
             match child_obj {
-                FSObj::Dir(dir) => {
+                FSObj::Dir(_) => {
                     assert!(false, "Internal Error");
                 }
                 FSObj::DirRef(dir_ref) => {
@@ -230,7 +212,7 @@ fn mark_all_children(path: PathBuf, dirp_state: &mut DirHash) {
     dir.is_marked = true;
     for fs_obj in &mut dir.dir_obj_list {
         match fs_obj {
-            FSObj::Dir(dir) => {
+            FSObj::Dir(_) => {
                 panic!("Internal state error.");
             }
             FSObj::DirRef(dir_ref) => {

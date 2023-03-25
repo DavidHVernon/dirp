@@ -1,15 +1,7 @@
 use crate::types::*;
 use crate::utils::*;
-use crate::UserMessage::GetStateResponse;
 use dir_pruner::DirpState;
-use std::str::FromStr;
-use std::{
-    cmp::Ordering,
-    path::PathBuf,
-    rc::Rc,
-    sync::{mpsc::Sender, Arc, Mutex},
-    thread,
-};
+use std::{path::PathBuf, sync::mpsc::Sender, thread};
 use ui::{step_app, App};
 
 use crossterm::{
@@ -70,7 +62,6 @@ fn dirp_state_to_i_state(
             let name = dir.path.file_name()?.to_string_lossy();
             let name = format!("{}{} {}", indent_to_level(level), flipper, name);
             let size = human_readable_bytes(dir.size_in_bytes);
-            let file_size = human_readable_bytes(dir.size_in_bytes);
             let percent = format!("{}%", dir.percent);
 
             i_state.push(IntermediateState {
@@ -89,7 +80,6 @@ fn dirp_state_to_i_state(
             let name = dir_ref.path.file_name()?.to_string_lossy();
             let name = format!("{}> {}", indent_to_level(level), name);
             let size = human_readable_bytes(dir_ref.size_in_bytes);
-            let file_size = human_readable_bytes(dir_ref.size_in_bytes);
             let percent = format!("{}%", dir_ref.percent);
 
             i_state.push(IntermediateState {
@@ -101,7 +91,6 @@ fn dirp_state_to_i_state(
             let name = file.path.file_name()?.to_string_lossy();
             let name = format!("{}  {}", indent_to_level(level), name);
             let size = human_readable_bytes(file.size_in_bytes);
-            let file_size = human_readable_bytes(file.size_in_bytes);
             let percent = format!("{}%", file.percent);
 
             i_state.push(IntermediateState {
@@ -113,7 +102,6 @@ fn dirp_state_to_i_state(
             let name = sym_link.path.file_name()?.to_string_lossy();
             let name = format!("{}  {}", indent_to_level(level), name);
             let size = human_readable_bytes(sym_link.size_in_bytes);
-            let file_size = human_readable_bytes(sym_link.size_in_bytes);
             let percent = format!("{}%", sym_link.percent);
 
             i_state.push(IntermediateState {
@@ -191,7 +179,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 UserMessage::UserInputToggleDir => {
                     dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].path.clone()));
                 }
-                UserMessage::UserInputToggleMarkPath(path) => {
+                UserMessage::UserInputToggleMarkPath(_) => {
                     dirp_state.send(DirpStateMessage::ToggleMarkPath(
                         i_state[state].path.clone(),
                     ));
@@ -215,10 +203,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         state = app.selected();
 
-        let res = step_app(&mut terminal, app);
-
-        do_next = false;
-        do_prev = false;
+        let _ = step_app(&mut terminal, app);
     }
 
     // restore terminal
