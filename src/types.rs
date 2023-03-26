@@ -96,8 +96,6 @@ pub enum UserMessage {
     UnmarkPath,
     ToggleMarkPath,
     RemoveMarked,
-    ConfirmRemoval,
-    CancelRemoval,
     Quit,
 }
 

@@ -43,8 +43,24 @@ fn normalize_file_path(file_path: &String) -> PathBuf {
 
 fn print_usage() {
     println!("");
-    println!("dirp - directory profiler.");
+    println!("A directory profiler.");
     println!("");
     println!("USAGE: dirp [directory path]");
     println!("");
+    println!("Keyboard commands:");
+    println!("");
+    println!("    Up Arrow, p          - Move selection up.");
+    println!("    Down Arrow, n        - Move selection down.");
+    println!("    ");
+    println!("    Left Arrow           - Show directory contents.");
+    println!("    Right Arrow          - Hide directory contents.");
+    println!("    f                    - Toggle directory contents.");
+    println!("    ");
+    println!("    d                    - Mark selection for removal.");
+    println!("    d                    - Unmark selection for removal.");
+    println!("    Delete, Backspace    - Toggle selection for removal.");
+    println!("    ");
+    println!("    x                    - Remove marked files, and exit program.");
+    println!("    q                    - Exit program.");
+    println!("    ");
 }

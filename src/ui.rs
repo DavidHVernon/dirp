@@ -8,8 +8,9 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use dialoguer::console::{self};
 use std::{error::Error, io};
-use std::{path::PathBuf, sync::mpsc::Sender, thread};
+use std::{sync::mpsc::Sender, thread};
 use tui::{backend::CrosstermBackend, Terminal};
 
 fn input_thread_spawn(user_sender: Sender<UserMessage>) {
@@ -38,9 +39,10 @@ fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
                 KeyCode::Char('d') => user_sender.send(UserMessage::MarkPath)?,
                 KeyCode::Char('u') => user_sender.send(UserMessage::UnmarkPath)?,
 
-                KeyCode::Char('x') => user_sender.send(UserMessage::RemoveMarked)?,
-                KeyCode::Char('y') => user_sender.send(UserMessage::ConfirmRemoval)?,
-                KeyCode::Char('n') => user_sender.send(UserMessage::CancelRemoval)?,
+                KeyCode::Char('x') => {
+                    user_sender.send(UserMessage::RemoveMarked)?;
+                    return Ok(());
+                }
 
                 KeyCode::Char('q') => {
                     user_sender.send(UserMessage::Quit)?;
@@ -208,15 +210,7 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
                 }
                 UserMessage::RemoveMarked => {
                     do_remove_marked = true;
-                }
-                UserMessage::ConfirmRemoval => {
-                    if do_remove_marked {
-                        dirp_state.send(DirpStateMessage::RemoveMarked);
-                        break;
-                    }
-                }
-                UserMessage::CancelRemoval => {
-                    do_remove_marked = false;
+                    break;
                 }
                 UserMessage::Quit => break,
             },
@@ -248,6 +242,11 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
+
+    if do_remove_marked {
+        dirp_state.send(DirpStateMessage::RemoveMarked);
+        let _ = dirp_state.thread_handle.join();
+    }
 
     Ok(())
 }

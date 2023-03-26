@@ -1,11 +1,14 @@
-use threadpool::ThreadPool;
-
 use crate::types::*;
 use crate::utils::*;
 use chrono::Duration;
+use console::Term;
+use dialoguer::console;
+use dialoguer::theme::ColorfulTheme;
+use dialoguer::FuzzySelect;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread::{self, JoinHandle};
+use threadpool::ThreadPool;
 use timer::MessageTimer;
 use trash;
 
@@ -98,9 +101,32 @@ pub fn dirp_state_loop(
                     }
                 }
                 DirpStateMessage::RemoveMarked => {
-                    if let Err(error) = remove_marked_files(root_path.clone(), &dirp_state) {
-                        panic!("Error Removing Files: {:#?}", error);
+                    println!("");
+                    for marked_file in marked_files_list(root_path.clone(), &dirp_state) {
+                        println!("{}", marked_file);
                     }
+                    println!("");
+                    println!("Move these files to the Trash?");
+
+                    let items = vec!["No", "Yes"];
+                    let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
+                        .items(&items)
+                        .default(0)
+                        .interact_on_opt(&Term::stdout())?;
+
+                    match selection {
+                        Some(index) => {
+                            if index == 1 {
+                                if let Err(error) =
+                                    remove_marked_files(root_path.clone(), &dirp_state)
+                                {
+                                    panic!("Error Removing Files: {:#?}", error);
+                                }
+                            }
+                        }
+                        None => {}
+                    }
+                    break;
                 }
                 DirpStateMessage::Quit => break,
             },
@@ -319,6 +345,45 @@ fn _do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) -> Op
     }
 }
 
+fn marked_files_list(path: PathBuf, dirp_state: &DirHash) -> Vec<String> {
+    let mut marked_files_list = Vec::new();
+
+    _marked_files_list(
+        &build_result_tree(&path, true, dirp_state),
+        &mut marked_files_list,
+    );
+    marked_files_list.sort();
+
+    marked_files_list
+}
+
+fn _marked_files_list(dir: &Dir, marked_files_list: &mut Vec<String>) {
+    if dir.is_marked {
+        marked_files_list.push(dir.path.to_string_lossy().to_string());
+    } else {
+        for child in &dir.dir_obj_list {
+            match child {
+                FSObj::Dir(child_dir) => {
+                    _marked_files_list(&child_dir, marked_files_list);
+                }
+                FSObj::DirRef(dir_ref) => {
+                    panic!("Internal Error");
+                }
+                FSObj::File(file) => {
+                    if file.is_marked {
+                        marked_files_list.push(file.path.to_string_lossy().to_string());
+                    }
+                }
+                FSObj::SymLink(sym_link) => {
+                    if sym_link.is_marked {
+                        marked_files_list.push(sym_link.path.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn remove_marked_files(path: PathBuf, dirp_state: &DirHash) -> Result<(), DirpError> {
     _remove_marked_files(FSObj::Dir(build_result_tree(&path, true, dirp_state)))
 }
@@ -328,7 +393,6 @@ fn _remove_marked_files(obj: FSObj) -> Result<(), DirpError> {
         FSObj::Dir(dir) => {
             if dir.is_marked {
                 trash::delete(&dir.path)?;
-                println!("Moved to Trash: {}", dir.path.to_string_lossy());
             } else {
                 for child in dir.dir_obj_list {
                     _remove_marked_files(child);
@@ -341,13 +405,11 @@ fn _remove_marked_files(obj: FSObj) -> Result<(), DirpError> {
         FSObj::File(file) => {
             if file.is_marked {
                 trash::delete(&file.path)?;
-                println!("Moved to Trash: {}", file.path.to_string_lossy());
             }
         }
         FSObj::SymLink(sym_link) => {
             if sym_link.is_marked {
                 trash::delete(&sym_link.path)?;
-                println!("Moved to Trash: {}", sym_link.path.to_string_lossy());
             }
         }
     }
@@ -359,7 +421,7 @@ pub struct DirpState {
     pub user_receiver: Receiver<UserMessage>,
     pub user_sender: Sender<UserMessage>,
     dirp_state_sender: Sender<DirpStateMessage>,
-    thread_handle: JoinHandle<()>,
+    pub thread_handle: JoinHandle<()>,
 }
 
 impl DirpState {
