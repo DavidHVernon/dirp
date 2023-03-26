@@ -48,7 +48,7 @@ pub fn dirp_state_loop(
     // Kick off timer.
     let message_timer = MessageTimer::new(dirp_state_sender.clone());
     let _message_timer_guard =
-        message_timer.schedule_repeating(Duration::milliseconds(50), DirpStateMessage::Timer);
+        message_timer.schedule_repeating(Duration::milliseconds(100), DirpStateMessage::Timer);
 
     loop {
         match dirp_state_receiver.recv() {
