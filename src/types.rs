@@ -105,6 +105,15 @@ pub enum UserMessage {
 pub struct GetStateResponse {
     pub dirp_state: Dir,
 }
+pub struct IntermediateState {
+    pub ui_row: Vec<String>,
+    pub is_marked: bool,
+    pub path: PathBuf,
+}
+
+pub struct Args {
+    pub path: PathBuf,
+}
 
 impl From<std::io::Error> for DirpError {
     fn from(error: std::io::Error) -> Self {

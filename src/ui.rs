@@ -1,122 +1,253 @@
-use std::{cell, io, path::PathBuf};
-use tui::{
-    backend::Backend,
-    layout::{Constraint, Layout},
-    style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Cell, Row, Table, TableState},
-    Frame, Terminal,
+use crate::dir_pruner::DirpState;
+use crate::tui_rs_boilerplate::AppRow;
+use crate::tui_rs_boilerplate::{step_app, App};
+use crate::types::*;
+use crate::utils::*;
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use std::{error::Error, io};
+use std::{path::PathBuf, sync::mpsc::Sender, thread};
+use tui::{backend::CrosstermBackend, Terminal};
 
-pub struct App<'a> {
-    pub path: PathBuf,
-    state: TableState,
-    items: Vec<AppRow<'a>>,
+fn input_thread_spawn(user_sender: Sender<UserMessage>) {
+    thread::spawn(move || {
+        let result = input_thread(user_sender);
+        if let Err(error) = result {
+            panic!("input_thread: {:?}.", error);
+        }
+    });
 }
 
-pub struct AppRow<'a> {
-    pub display_data: Vec<&'a str>,
-    pub is_marked: bool,
-}
+fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
+    loop {
+        match event::read()? {
+            Event::Key(key) => match key.code {
+                KeyCode::Down => user_sender.send(UserMessage::Next)?,
+                KeyCode::Up => user_sender.send(UserMessage::Previous)?,
+                KeyCode::Left => user_sender.send(UserMessage::CloseDir)?,
+                KeyCode::Right => user_sender.send(UserMessage::OpenDir)?,
+                KeyCode::Delete => user_sender.send(UserMessage::ToggleMarkPath)?,
+                KeyCode::Backspace => user_sender.send(UserMessage::ToggleMarkPath)?,
 
-impl<'a> App<'a> {
-    pub fn new(path: PathBuf, items: Vec<AppRow<'a>>) -> App<'a> {
-        App {
-            path,
-            state: TableState::default(),
-            items,
+                KeyCode::Char('p') => user_sender.send(UserMessage::Previous)?,
+                KeyCode::Char('n') => user_sender.send(UserMessage::Next)?,
+                KeyCode::Char('f') => user_sender.send(UserMessage::ToggleDir)?,
+                KeyCode::Char('d') => user_sender.send(UserMessage::MarkPath)?,
+                KeyCode::Char('u') => user_sender.send(UserMessage::UnmarkPath)?,
+
+                KeyCode::Char('x') => user_sender.send(UserMessage::RemoveMarked)?,
+                KeyCode::Char('y') => user_sender.send(UserMessage::ConfirmRemoval)?,
+                KeyCode::Char('n') => user_sender.send(UserMessage::CancelRemoval)?,
+
+                KeyCode::Char('q') => {
+                    user_sender.send(UserMessage::Quit)?;
+                    return Ok(());
+                }
+
+                _ => {}
+            },
+            _ => { /* Ignore all other forms of input. */ }
         }
     }
-
-    pub fn selected(&mut self) -> usize {
-        self.state.selected().expect("We always want a selection.")
-    }
-
-    pub fn set_selected(&mut self, state: usize) {
-        self.state.select(Some(state));
-    }
-
-    pub fn next(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i >= self.items.len() - 1 {
-                    i
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
-
-    pub fn previous(&mut self) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    i
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
 }
 
-pub fn step_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
-    terminal.draw(|f| ui(f, &mut app))?;
-    Ok(())
+fn dirp_state_to_i_state(
+    fs_obj: &mut FSObj,
+    level: u32,
+    i_state: &mut Vec<IntermediateState>,
+) -> Option<()> {
+    match fs_obj {
+        FSObj::Dir(dir) => {
+            let flipper = match dir.is_open {
+                true => "⏷",
+                false => "⏵",
+            };
+            let name = dir.path.file_name()?.to_string_lossy();
+            let name = format!("{}{} {}", indent_to_level(level), flipper, name);
+            let size = human_readable_bytes(dir.size_in_bytes);
+            let percent = format!("{}%", dir.percent);
+
+            i_state.push(IntermediateState {
+                ui_row: vec![name, percent, size],
+                is_marked: dir.is_marked,
+                path: dir.path.clone(),
+            });
+
+            dir.dir_obj_list
+                .sort_by(|a, b| b.size_in_bytes().cmp(&a.size_in_bytes()));
+
+            for child_obj in &mut dir.dir_obj_list {
+                dirp_state_to_i_state(child_obj, level + 1, i_state);
+            }
+        }
+        FSObj::DirRef(dir_ref) => {
+            let name = dir_ref.path.file_name()?.to_string_lossy();
+            let name = format!("{}> {}", indent_to_level(level), name);
+            let size = human_readable_bytes(dir_ref.size_in_bytes);
+            let percent = format!("{}%", dir_ref.percent);
+
+            i_state.push(IntermediateState {
+                ui_row: vec![name, percent, size],
+                is_marked: dir_ref.is_marked,
+                path: dir_ref.path.clone(),
+            });
+        }
+        FSObj::File(file) => {
+            let name = file.path.file_name()?.to_string_lossy();
+            let name = format!("{}  {}", indent_to_level(level), name);
+            let size = human_readable_bytes(file.size_in_bytes);
+            let percent = format!("{}%", file.percent);
+
+            i_state.push(IntermediateState {
+                ui_row: vec![name, percent, size],
+                is_marked: file.is_marked,
+                path: file.path.clone(),
+            });
+        }
+        FSObj::SymLink(sym_link) => {
+            let name = sym_link.path.file_name()?.to_string_lossy();
+            let name = format!("{}  {}", indent_to_level(level), name);
+            let size = human_readable_bytes(sym_link.size_in_bytes);
+            let percent = format!("{}%", sym_link.percent);
+
+            i_state.push(IntermediateState {
+                ui_row: vec![name, percent, size],
+                is_marked: sym_link.is_marked,
+                path: sym_link.path.clone(),
+            });
+        }
+    };
+
+    Some(())
 }
 
-fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
-    let rects = Layout::default()
-        .constraints([Constraint::Percentage(100)].as_ref())
-        .margin(5)
-        .split(f.size());
+fn i_state_to_app_state<'a>(i_state: &'a Vec<IntermediateState>) -> Vec<AppRow<'a>> {
+    let mut result = Vec::new();
 
-    let selected_style = Style::default().add_modifier(Modifier::REVERSED);
-    let normal_header_style = Style::default().bg(Color::Blue);
-    let normal_header_style = Style::default().bg(Color::Blue);
-    let normal_style = Style::default();
-    let disabled_style = Style::default().add_modifier(Modifier::DIM);
-    let header_cells = ["File", "%", "Size"]
-        .iter()
-        .map(|h| Cell::from(*h).style(Style::default().fg(Color::LightGreen)));
-    let header = Row::new(header_cells)
-        .style(normal_header_style)
-        .height(1)
-        .bottom_margin(1);
-    let rows = app.items.iter().map(|item| {
-        let height = item
-            .display_data
-            .iter()
-            .map(|content| content.chars().filter(|c| *c == '\n').count())
-            .max()
-            .unwrap_or(0)
-            + 1;
-        let cells = item.display_data.iter().map(|c| {
-            if item.is_marked {
-                Cell::from(*c).style(disabled_style)
-            } else {
-                Cell::from(*c).style(normal_style)
-            }
+    for item in i_state {
+        result.push(AppRow {
+            display_data: vec![
+                item.ui_row[0].as_str(),
+                item.ui_row[1].as_str(),
+                item.ui_row[2].as_str(),
+            ],
+            is_marked: item.is_marked,
         });
-        Row::new(cells).height(height as u16).bottom_margin(1)
-    });
+    }
 
-    let path = app.path.to_string_lossy();
-    let path = format!(" {} ", path);
+    result
+}
 
-    let t = Table::new(rows)
-        .header(header)
-        .block(Block::default().borders(Borders::ALL).title(path.as_str()))
-        .highlight_style(selected_style)
-        .highlight_symbol("   ")
-        .widths(&[
-            Constraint::Percentage(50),
-            Constraint::Length(30),
-            Constraint::Min(10),
-        ]);
-    f.render_stateful_widget(t, rects[0], &mut app.state);
+pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
+    let path = args.path;
+
+    // setup terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
+
+    let dirp_state = DirpState::new(path.clone());
+
+    input_thread_spawn(dirp_state.user_sender.clone());
+
+    let mut i_state = Vec::new();
+    let mut state = 0;
+
+    let mut do_remove_marked = false;
+
+    let app_state = i_state_to_app_state(&i_state);
+    let mut app = App::new(path.clone(), app_state);
+
+    let _ = step_app(&mut terminal, app);
+
+    loop {
+        let mut do_next = false;
+        let mut do_prev = false;
+
+        match dirp_state.user_receiver.recv() {
+            Ok(user_message) => match user_message {
+                UserMessage::GetStateResponse(user_message) => {
+                    // create app and run it
+                    i_state.clear();
+                    dirp_state_to_i_state(
+                        &mut FSObj::Dir(user_message.dirp_state),
+                        1,
+                        &mut i_state,
+                    )
+                    .expect("err");
+                }
+                UserMessage::Next => {
+                    do_next = true;
+                }
+                UserMessage::Previous => {
+                    do_prev = true;
+                }
+                UserMessage::OpenDir => {
+                    dirp_state.send(DirpStateMessage::OpenDir(i_state[state].path.clone()));
+                }
+                UserMessage::CloseDir => {
+                    dirp_state.send(DirpStateMessage::CloseDir(i_state[state].path.clone()));
+                }
+                UserMessage::ToggleDir => {
+                    dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].path.clone()));
+                }
+                UserMessage::MarkPath => {
+                    dirp_state.send(DirpStateMessage::MarkPath(i_state[state].path.clone()));
+                }
+                UserMessage::UnmarkPath => {
+                    dirp_state.send(DirpStateMessage::UnmarkPath(i_state[state].path.clone()));
+                }
+                UserMessage::ToggleMarkPath => {
+                    dirp_state.send(DirpStateMessage::ToggleMarkPath(
+                        i_state[state].path.clone(),
+                    ));
+                }
+                UserMessage::RemoveMarked => {
+                    do_remove_marked = true;
+                }
+                UserMessage::ConfirmRemoval => {
+                    if do_remove_marked {
+                        dirp_state.send(DirpStateMessage::RemoveMarked);
+                        break;
+                    }
+                }
+                UserMessage::CancelRemoval => {
+                    do_remove_marked = false;
+                }
+                UserMessage::Quit => break,
+            },
+            Err(error) => {
+                panic!("recv() error: {}", error);
+            }
+        }
+
+        let app_state = i_state_to_app_state(&i_state);
+        let mut app = App::new(path.clone(), app_state);
+
+        app.set_selected(state);
+        if do_next {
+            app.next();
+        }
+        if do_prev {
+            app.previous();
+        }
+        state = app.selected();
+
+        let _ = step_app(&mut terminal, app);
+    }
+
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    Ok(())
 }

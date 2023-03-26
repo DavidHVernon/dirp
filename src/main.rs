@@ -1,259 +1,50 @@
-use crate::types::*;
-use crate::utils::*;
-use dir_pruner::DirpState;
-use std::{path::PathBuf, sync::mpsc::Sender, thread};
-use ui::AppRow;
-use ui::{step_app, App};
-
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use std::{error::Error, io};
-use tui::{backend::CrosstermBackend, Terminal};
+use core::panic;
+use std::env::{args, current_dir, home_dir};
+use std::fs::canonicalize;
+use std::path::PathBuf;
+use std::process::exit;
+use types::*;
+use ui::ui_runloop;
 
 mod dir_pruner;
+mod tui_rs_boilerplate;
 mod types;
 mod ui;
 mod utils;
 
-fn input_thread_spawn(user_sender: Sender<UserMessage>) {
-    thread::spawn(move || {
-        let result = input_thread(user_sender);
-        if let Err(error) = result {
-            panic!("input_thread: {:?}.", error);
-        }
-    });
+fn main() {
+    ui_runloop(parse_args());
 }
 
-fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
-    loop {
-        match event::read()? {
-            Event::Key(key) => match key.code {
-                KeyCode::Down => user_sender.send(UserMessage::Next)?,
-                KeyCode::Up => user_sender.send(UserMessage::Previous)?,
-                KeyCode::Left => user_sender.send(UserMessage::CloseDir)?,
-                KeyCode::Right => user_sender.send(UserMessage::OpenDir)?,
-                KeyCode::Delete => user_sender.send(UserMessage::ToggleMarkPath)?,
-                KeyCode::Backspace => user_sender.send(UserMessage::ToggleMarkPath)?,
+fn parse_args() -> Args {
+    let mut args = args();
+    args.next();
+    let args_list: Vec<String> = args.collect();
 
-                KeyCode::Char('p') => user_sender.send(UserMessage::Previous)?,
-                KeyCode::Char('n') => user_sender.send(UserMessage::Next)?,
-                KeyCode::Char('f') => user_sender.send(UserMessage::ToggleDir)?,
-                KeyCode::Char('d') => user_sender.send(UserMessage::MarkPath)?,
-                KeyCode::Char('u') => user_sender.send(UserMessage::UnmarkPath)?,
-
-                KeyCode::Char('x') => user_sender.send(UserMessage::RemoveMarked)?,
-                KeyCode::Char('y') => user_sender.send(UserMessage::ConfirmRemoval)?,
-                KeyCode::Char('n') => user_sender.send(UserMessage::CancelRemoval)?,
-
-                KeyCode::Char('q') => {
-                    user_sender.send(UserMessage::Quit)?;
-                    return Ok(());
-                }
-
-                _ => {}
-            },
-            _ => { /* Ignore all other forms of input. */ }
-        }
+    if args_list.len() == 1 {
+        // dirp <file-path>
+        return Args {
+            path: normalize_file_path(&args_list[0]),
+        };
+    } else {
+        print_usage();
+        exit(-1);
     }
 }
 
-fn dirp_state_to_i_state(
-    fs_obj: &mut FSObj,
-    level: u32,
-    i_state: &mut Vec<IntermediateState>,
-) -> Option<()> {
-    match fs_obj {
-        FSObj::Dir(dir) => {
-            let flipper = match dir.is_open {
-                true => "⏷",
-                false => "⏵",
-            };
-            let name = dir.path.file_name()?.to_string_lossy();
-            let name = format!("{}{} {}", indent_to_level(level), flipper, name);
-            let size = human_readable_bytes(dir.size_in_bytes);
-            let percent = format!("{}%", dir.percent);
-
-            i_state.push(IntermediateState {
-                ui_row: vec![name, percent, size],
-                is_marked: dir.is_marked,
-                path: dir.path.clone(),
-            });
-
-            dir.dir_obj_list
-                .sort_by(|a, b| b.size_in_bytes().cmp(&a.size_in_bytes()));
-
-            for child_obj in &mut dir.dir_obj_list {
-                dirp_state_to_i_state(child_obj, level + 1, i_state);
-            }
-        }
-        FSObj::DirRef(dir_ref) => {
-            let name = dir_ref.path.file_name()?.to_string_lossy();
-            let name = format!("{}> {}", indent_to_level(level), name);
-            let size = human_readable_bytes(dir_ref.size_in_bytes);
-            let percent = format!("{}%", dir_ref.percent);
-
-            i_state.push(IntermediateState {
-                ui_row: vec![name, percent, size],
-                is_marked: dir_ref.is_marked,
-                path: dir_ref.path.clone(),
-            });
-        }
-        FSObj::File(file) => {
-            let name = file.path.file_name()?.to_string_lossy();
-            let name = format!("{}  {}", indent_to_level(level), name);
-            let size = human_readable_bytes(file.size_in_bytes);
-            let percent = format!("{}%", file.percent);
-
-            i_state.push(IntermediateState {
-                ui_row: vec![name, percent, size],
-                is_marked: file.is_marked,
-                path: file.path.clone(),
-            });
-        }
-        FSObj::SymLink(sym_link) => {
-            let name = sym_link.path.file_name()?.to_string_lossy();
-            let name = format!("{}  {}", indent_to_level(level), name);
-            let size = human_readable_bytes(sym_link.size_in_bytes);
-            let percent = format!("{}%", sym_link.percent);
-
-            i_state.push(IntermediateState {
-                ui_row: vec![name, percent, size],
-                is_marked: sym_link.is_marked,
-                path: sym_link.path.clone(),
-            });
-        }
-    };
-
-    Some(())
-}
-
-fn i_state_to_app_state<'a>(i_state: &'a Vec<IntermediateState>) -> Vec<AppRow<'a>> {
-    let mut result = Vec::new();
-
-    for item in i_state {
-        result.push(AppRow {
-            display_data: vec![
-                item.ui_row[0].as_str(),
-                item.ui_row[1].as_str(),
-                item.ui_row[2].as_str(),
-            ],
-            is_marked: item.is_marked,
-        });
+fn normalize_file_path(file_path: &String) -> PathBuf {
+    match file_path.as_str() {
+        "~" => home_dir().expect("~ can not be resolved to a home directory."),
+        "." => current_dir().expect(". can not be resolved to the current working directory."),
+        _ => canonicalize(file_path.clone())
+            .expect(&format!("Could not canonicalize file path: {}.", file_path)),
     }
-
-    result
 }
 
-struct IntermediateState {
-    ui_row: Vec<String>,
-    is_marked: bool,
-    path: PathBuf,
-}
-
-fn main() -> Result<(), Box<dyn Error>> {
-    // setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
-
-    let path = PathBuf::from("./test");
-    let dirp_state = DirpState::new(path.clone());
-
-    input_thread_spawn(dirp_state.user_sender.clone());
-
-    let mut i_state = Vec::new();
-    let mut state = 0;
-
-    let mut do_remove_marked = false;
-
-    loop {
-        let mut do_next = false;
-        let mut do_prev = false;
-
-        match dirp_state.user_receiver.recv() {
-            Ok(user_message) => match user_message {
-                UserMessage::GetStateResponse(user_message) => {
-                    // create app and run it
-                    i_state.clear();
-                    dirp_state_to_i_state(
-                        &mut FSObj::Dir(user_message.dirp_state),
-                        1,
-                        &mut i_state,
-                    )
-                    .expect("err");
-                }
-                UserMessage::Next => {
-                    do_next = true;
-                }
-                UserMessage::Previous => {
-                    do_prev = true;
-                }
-                UserMessage::OpenDir => {
-                    dirp_state.send(DirpStateMessage::OpenDir(i_state[state].path.clone()));
-                }
-                UserMessage::CloseDir => {
-                    dirp_state.send(DirpStateMessage::CloseDir(i_state[state].path.clone()));
-                }
-                UserMessage::ToggleDir => {
-                    dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].path.clone()));
-                }
-                UserMessage::MarkPath => {
-                    dirp_state.send(DirpStateMessage::MarkPath(i_state[state].path.clone()));
-                }
-                UserMessage::UnmarkPath => {
-                    dirp_state.send(DirpStateMessage::UnmarkPath(i_state[state].path.clone()));
-                }
-                UserMessage::ToggleMarkPath => {
-                    dirp_state.send(DirpStateMessage::ToggleMarkPath(
-                        i_state[state].path.clone(),
-                    ));
-                }
-                UserMessage::RemoveMarked => {
-                    do_remove_marked = true;
-                }
-                UserMessage::ConfirmRemoval => {
-                    if do_remove_marked {
-                        dirp_state.send(DirpStateMessage::RemoveMarked);
-                        break;
-                    }
-                }
-                UserMessage::CancelRemoval => {
-                    do_remove_marked = false;
-                }
-                UserMessage::Quit => break,
-            },
-            Err(error) => {
-                panic!("recv() error: {}", error);
-            }
-        }
-
-        let app_state = i_state_to_app_state(&i_state);
-        let mut app = App::new(path.clone(), app_state);
-
-        app.set_selected(state);
-        if do_next {
-            app.next();
-        }
-        if do_prev {
-            app.previous();
-        }
-        state = app.selected();
-
-        let _ = step_app(&mut terminal, app);
-    }
-
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
-
-    Ok(())
+fn print_usage() {
+    println!("");
+    println!("dirp - directory profiler.");
+    println!("");
+    println!("USAGE: dirp [directory path]");
+    println!("");
 }
