@@ -2,30 +2,15 @@ use crate::types::*;
 use crate::utils::*;
 use chrono::Duration;
 use console::Term;
-use dialoguer::console;
-use dialoguer::theme::ColorfulTheme;
-use dialoguer::FuzzySelect;
-use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::thread::{self, JoinHandle};
+use dialoguer::{console, theme::ColorfulTheme, FuzzySelect};
+use std::{
+    path::PathBuf,
+    sync::mpsc::{Receiver, Sender},
+    thread::{self, JoinHandle},
+};
 use threadpool::ThreadPool;
 use timer::MessageTimer;
 use trash;
-
-pub fn dirp_state_thread_spawn(
-    path: PathBuf,
-    user_sender: Sender<UserMessage>,
-    dirp_state_sender: Sender<DirpStateMessage>,
-    dirp_state_receiver: Receiver<DirpStateMessage>,
-) -> JoinHandle<()> {
-    thread::spawn(move || {
-        if let Err(error) =
-            dirp_state_loop(path, user_sender, dirp_state_sender, dirp_state_receiver)
-        {
-            panic!("dirp_state_loop error: {:#?}", error);
-        }
-    })
-}
 
 pub fn dirp_state_loop(
     root_path: PathBuf,
@@ -50,6 +35,7 @@ pub fn dirp_state_loop(
     let _message_timer_guard =
         message_timer.schedule_repeating(Duration::milliseconds(100), DirpStateMessage::Timer);
 
+    // Event Loop
     loop {
         match dirp_state_receiver.recv() {
             Ok(message) => match message {
@@ -58,12 +44,16 @@ pub fn dirp_state_loop(
                     is_state_dirty = true;
                 }
                 DirpStateMessage::GetStateRequest => {
-                    process_get_state_request(&root_path, &mut dirp_state, &user_sender)?;
+                    user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
+                        dirp_state: build_result_tree(&root_path, false, &dirp_state),
+                    }))?;
                 }
                 DirpStateMessage::Timer => {
                     if is_state_dirty {
                         is_state_dirty = false;
-                        process_get_state_request(&root_path, &mut dirp_state, &user_sender)?;
+                        user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
+                            dirp_state: build_result_tree(&root_path, false, &dirp_state),
+                        }))?;
                     }
                 }
                 DirpStateMessage::OpenDir(path) => {
@@ -101,31 +91,7 @@ pub fn dirp_state_loop(
                     }
                 }
                 DirpStateMessage::RemoveMarked => {
-                    println!("");
-                    for marked_file in marked_files_list(root_path.clone(), &dirp_state) {
-                        println!("{}", marked_file);
-                    }
-                    println!("");
-                    println!("Move these files to the Trash?");
-
-                    let items = vec!["No", "Yes"];
-                    let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
-                        .items(&items)
-                        .default(0)
-                        .interact_on_opt(&Term::stdout())?;
-
-                    match selection {
-                        Some(index) => {
-                            if index == 1 {
-                                if let Err(error) =
-                                    remove_marked_files(root_path.clone(), &dirp_state)
-                                {
-                                    panic!("Error Removing Files: {:#?}", error);
-                                }
-                            }
-                        }
-                        None => {}
-                    }
+                    process_remove_marked(&root_path, &dirp_state)?;
                     break;
                 }
                 DirpStateMessage::Quit => break,
@@ -139,12 +105,30 @@ pub fn dirp_state_loop(
     Ok(())
 }
 
+pub fn dirp_state_thread_spawn(
+    path: PathBuf,
+    user_sender: Sender<UserMessage>,
+    dirp_state_sender: Sender<DirpStateMessage>,
+    dirp_state_receiver: Receiver<DirpStateMessage>,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        if let Err(error) =
+            dirp_state_loop(path, user_sender, dirp_state_sender, dirp_state_receiver)
+        {
+            panic!("dirp_state_loop error: {:#?}", error);
+        }
+    })
+}
+
 fn process_dir_scan_message(
     mut dir: Dir,
     dirp_state: &mut DirHash,
     dirp_state_sender: &Sender<DirpStateMessage>,
     threadpool: &ThreadPool,
 ) {
+    // A dir scan has been completed in the thread pool. 'dir' is the result of that work.
+
+    // Post process the dir.
     dir.size_in_bytes = 0;
     for fs_obj in &dir.dir_obj_list {
         match fs_obj {
@@ -183,21 +167,35 @@ fn process_dir_scan_message(
     dirp_state.insert(dir.path.clone(), dir);
 }
 
-fn process_get_state_request(
-    path: &PathBuf,
-    dirp_state: &mut DirHash,
-    user_sender: &Sender<UserMessage>,
-) -> Result<(), DirpError> {
-    user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-        dirp_state: build_result_tree(&path, false, &dirp_state),
-    }))?;
+fn process_remove_marked(root_path: &PathBuf, dirp_state: &DirHash) -> Result<(), DirpError> {
+    println!("");
+    for marked_file in marked_files_list(root_path.clone(), &dirp_state) {
+        println!("{}", marked_file);
+    }
+    println!("");
+    println!("Move these files to the Trash?");
 
+    let items = vec!["No", "Yes"];
+    let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
+        .items(&items)
+        .default(0)
+        .interact_on_opt(&Term::stdout())?;
+
+    match selection {
+        Some(index) => {
+            if index == 1 {
+                if let Err(error) = remove_marked_files(root_path.clone(), &dirp_state) {
+                    panic!("Error Removing Files: {:#?}", error);
+                }
+            }
+        }
+        None => {}
+    }
     Ok(())
 }
 
 fn build_result_tree(path: &PathBuf, include_all: bool, dirp_state: &DirHash) -> Dir {
     let root_dir = dirp_state.get(path).expect("internal error");
-
     _build_result_tree(path, include_all, dirp_state, root_dir.size_in_bytes as f64)
 }
 
@@ -207,6 +205,9 @@ fn _build_result_tree(
     dirp_state: &DirHash,
     total_bytes: f64,
 ) -> Dir {
+    // dirp_state holds all of the dirs in a hash (by path). This code will convert that
+    // into a tree structure that the client code expect. 
+
     let mut result_dir = dirp_state.get(path).expect("internal error").clone();
     result_dir.percent = ((result_dir.size_in_bytes as f64 / total_bytes) * 100.0) as u8;
 
@@ -283,8 +284,9 @@ fn do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) {
 }
 
 fn _do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) -> Option<()> {
+    // Mark all objects as 'is_marked' from 'path' all the way down the tree. 
+    
     // Find 'path' in 'dirp_state'.
-
     if let Some(dir) = dirp_state.get_mut(&path) {
         // path resolves to a dir.
 
@@ -415,72 +417,6 @@ fn _remove_marked_files(obj: FSObj) -> Result<(), DirpError> {
     }
 
     Ok(())
-}
-
-pub struct DirpState {
-    pub user_receiver: Receiver<UserMessage>,
-    pub user_sender: Sender<UserMessage>,
-    dirp_state_sender: Sender<DirpStateMessage>,
-    pub thread_handle: JoinHandle<()>,
-}
-
-impl DirpState {
-    pub fn new(path: PathBuf) -> DirpState {
-        let (dirp_state_sender, dirp_state_receiver) = channel();
-        let (user_sender, user_receiver) = channel();
-
-        // Spawn a long running task to manage dirp state.
-        let thread_handle = dirp_state_thread_spawn(
-            path,
-            user_sender.clone(),
-            dirp_state_sender.clone(),
-            dirp_state_receiver,
-        );
-
-        DirpState {
-            user_receiver,
-            user_sender,
-            dirp_state_sender,
-            thread_handle,
-        }
-    }
-
-    pub fn quit(self) {
-        if let Err(error) = self.dirp_state_sender.send(DirpStateMessage::Quit) {
-            panic!(
-                "DirpState.quit(): Could not send quit message. Error: {:#?}",
-                error
-            );
-        }
-        if let Err(error) = self.thread_handle.join() {
-            panic!(
-                "DirpState.quit(): Could not join thread handle: {:#?}",
-                error
-            );
-        }
-    }
-
-    pub fn send(&self, message: DirpStateMessage) {
-        if let Err(error) = self.dirp_state_sender.send(message) {
-            panic!("DirpState.send(): error: {:#?}", error);
-        }
-    }
-
-    pub fn recv(&self) -> UserMessage {
-        match self.user_receiver.recv() {
-            Ok(message) => {
-                return message;
-            }
-            Err(error) => {
-                panic!("DirpState.recv(): error: {:#?}", error);
-            }
-        }
-    }
-
-    pub fn request(&self, request: DirpStateMessage) -> UserMessage {
-        self.send(request);
-        self.recv()
-    }
 }
 
 #[cfg(test)]

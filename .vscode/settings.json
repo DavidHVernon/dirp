@@ -3,6 +3,7 @@
     "canonicalize",
     "chrono",
     "dialoguer",
+    "runloop",
     "unmark"
   ]
 }
