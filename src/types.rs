@@ -53,6 +53,144 @@ pub struct DirRef {
     pub is_marked: bool,
 }
 
+#[derive(Debug, Clone, Hash)]
+pub enum ClientFSObj<'a> {
+    ClientFile(ClientFile<'a>),
+    ClientDir(ClientDir<'a>),
+}
+
+#[derive(Debug, Clone, Hash)]
+pub struct ClientDir<'a> {
+    pub name: String,
+    pub is_open: bool,
+    pub size_in_bytes: u64,
+    pub percent: u8,
+    pub is_marked: bool,
+    pub dir_obj_list: Vec<ClientFSObj<'a>>,
+    pub parent: Option<&'a ClientFSObj<'a>>,
+}
+
+#[derive(Debug, Clone, Hash)]
+pub struct ClientFile<'a> {
+    pub name: String,
+    pub is_link: bool,
+    pub size_in_bytes: u64,
+    pub percent: u8,
+    pub is_marked: bool,
+    pub parent: Option<&'a ClientFSObj<'a>>,
+}
+
+pub trait Path {
+    fn path(&self) -> String;
+}
+
+impl Path for ClientFSObj<'_> {
+    fn path(&self) -> String {
+        match self {
+            ClientFSObj::ClientDir(dir) => self.path(),
+            ClientFSObj::ClientFile(file) => self.path(),
+        }
+    }
+}
+
+impl ClientDir<'_> {
+    pub fn path(&self) -> String {
+        let mut path = self.name;
+        if let Some(parent) = self.parent {
+            if let ClientFSObj::ClientDir(parent) = parent {
+                path = format!("{}/{}", parent.name, path);
+            }
+        }
+        path
+    }
+}
+
+impl ClientFile<'_> {
+    pub fn path(&self) -> String {
+        let mut path = self.name;
+        if let Some(parent) = self.parent {
+            if let ClientFSObj::ClientDir(parent) = parent {
+                path = format!("{}/{}", parent.name, path);
+            }
+        }
+        path
+    }
+}
+
+impl From<Dir> for ClientDir<'_> {
+    fn from(dir: Dir) -> Self {
+        ClientDir {
+            name: dir
+                .path
+                .file_name()
+                .expect("No file name.")
+                .to_string_lossy()
+                .to_string(),
+            is_open: dir.is_open,
+            size_in_bytes: dir.size_in_bytes,
+            percent: dir.percent,
+            is_marked: dir.is_marked,
+            dir_obj_list: Vec::new(),
+            parent: None,
+        }
+    }
+}
+
+impl From<DirRef> for ClientDir<'_> {
+    fn from(dir_ref: DirRef) -> Self {
+        ClientDir {
+            name: dir_ref
+                .path
+                .file_name()
+                .expect("No file name.")
+                .to_string_lossy()
+                .to_string(),
+            is_open: dir_ref.is_open,
+            size_in_bytes: dir_ref.size_in_bytes,
+            percent: dir_ref.percent,
+            is_marked: dir_ref.is_marked,
+            dir_obj_list: Vec::new(),
+            parent: None,
+        }
+    }
+}
+
+impl From<File> for ClientFile<'_> {
+    fn from(file: File) -> Self {
+        ClientFile {
+            name: file
+                .path
+                .file_name()
+                .expect("No file name.")
+                .to_string_lossy()
+                .to_string(),
+            is_link: false,
+            size_in_bytes: file.size_in_bytes,
+            percent: file.percent,
+            is_marked: file.is_marked,
+            parent: None,
+        }
+    }
+}
+
+impl From<SymLink> for ClientFile<'_> {
+    fn from(sym_link: SymLink) -> Self {
+        ClientFile {
+            name: sym_link
+                .path
+                .file_name()
+                .expect("No file name.")
+                .to_string_lossy()
+                .to_string(),
+            is_link: true,
+            size_in_bytes: sym_link.size_in_bytes,
+            percent: sym_link.percent,
+            is_marked: sym_link.is_marked,
+            parent: None,
+        }
+    }
+}
+
 pub trait SizeInBytes {
     fn size_in_bytes(&self) -> u64;
 }
@@ -68,24 +206,33 @@ impl SizeInBytes for FSObj {
     }
 }
 
+impl SizeInBytes for ClientFSObj<'_> {
+    fn size_in_bytes(&self) -> u64 {
+        match self {
+            ClientFSObj::ClientDir(dir) => dir.size_in_bytes,
+            ClientFSObj::ClientFile(file) => file.size_in_bytes,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum DirpStateMessage {
     DirScanMessage(Dir),
     GetStateRequest,
-    OpenDir(PathBuf),
-    CloseDir(PathBuf),
-    ToggleDir(PathBuf),
-    MarkPath(PathBuf),
-    UnmarkPath(PathBuf),
-    ToggleMarkPath(PathBuf),
+    OpenDir(String),
+    CloseDir(String),
+    ToggleDir(String),
+    MarkPath(String),
+    UnmarkPath(String),
+    ToggleMarkPath(String),
     RemoveMarked,
     Timer,
     Quit,
 }
 
 #[derive(Debug, Hash)]
-pub enum UserMessage {
-    GetStateResponse(GetStateResponse),
+pub enum UserMessage<'a> {
+    GetStateResponse(GetStateResponse<'a>),
     Next,
     Previous,
     CloseDir,
@@ -99,29 +246,29 @@ pub enum UserMessage {
 }
 
 #[derive(Debug, Hash)]
-pub struct GetStateResponse {
-    pub dirp_state: Dir,
+pub struct GetStateResponse<'a> {
+    pub result_tree: ClientDir<'a>,
 }
 
 pub struct IntermediateState {
     pub ui_row: Vec<String>,
     pub is_marked: bool,
-    pub path: PathBuf,
+    pub name: String,
 }
 
 pub struct Args {
     pub path: PathBuf,
 }
 
-pub struct DirpState {
-    pub user_receiver: Receiver<UserMessage>,
-    pub user_sender: Sender<UserMessage>,
+pub struct DirpState<'a> {
+    pub user_receiver: Receiver<UserMessage<'a>>,
+    pub user_sender: Sender<UserMessage<'a>>,
     dirp_state_sender: Sender<DirpStateMessage>,
     pub thread_handle: JoinHandle<()>,
 }
 
-impl DirpState {
-    pub fn new(path: PathBuf) -> DirpState {
+impl DirpState<'_> {
+    pub fn new<'a>(path: PathBuf) -> DirpState<'a> {
         let (dirp_state_sender, dirp_state_receiver) = channel();
         let (user_sender, user_receiver) = channel();
 
@@ -180,39 +327,39 @@ impl DirpState {
 }
 
 #[derive(Debug)]
-pub enum DirpError {
+pub enum DirpError<'a> {
     StdIoError(std::io::Error),
     RecvError(std::sync::mpsc::RecvError),
     SendErrorDirpStateMessage(std::sync::mpsc::SendError<DirpStateMessage>),
-    SendErrorUserMessage(std::sync::mpsc::SendError<UserMessage>),
+    SendErrorUserMessage(std::sync::mpsc::SendError<UserMessage<'a>>),
     TrashError(trash::Error),
 }
 
-impl From<std::io::Error> for DirpError {
+impl From<std::io::Error> for DirpError<'_> {
     fn from(error: std::io::Error) -> Self {
         DirpError::StdIoError(error)
     }
 }
 
-impl From<std::sync::mpsc::RecvError> for DirpError {
+impl From<std::sync::mpsc::RecvError> for DirpError<'_> {
     fn from(error: std::sync::mpsc::RecvError) -> Self {
         DirpError::RecvError(error)
     }
 }
 
-impl From<std::sync::mpsc::SendError<DirpStateMessage>> for DirpError {
+impl From<std::sync::mpsc::SendError<DirpStateMessage>> for DirpError<'_> {
     fn from(error: std::sync::mpsc::SendError<DirpStateMessage>) -> Self {
         DirpError::SendErrorDirpStateMessage(error)
     }
 }
 
-impl From<std::sync::mpsc::SendError<UserMessage>> for DirpError {
+impl From<std::sync::mpsc::SendError<UserMessage<'_>>> for DirpError<'_> {
     fn from(error: std::sync::mpsc::SendError<UserMessage>) -> Self {
         DirpError::SendErrorUserMessage(error)
     }
 }
 
-impl From<trash::Error> for DirpError {
+impl From<trash::Error> for DirpError<'_> {
     fn from(error: trash::Error) -> Self {
         DirpError::TrashError(error)
     }

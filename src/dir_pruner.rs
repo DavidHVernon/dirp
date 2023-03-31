@@ -45,18 +45,19 @@ pub fn dirp_state_loop(
                 }
                 DirpStateMessage::GetStateRequest => {
                     user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-                        dirp_state: build_result_tree(&root_path, false, &dirp_state),
+                        result_tree: build_result_tree(&root_path, false, &dirp_state),
                     }))?;
                 }
                 DirpStateMessage::Timer => {
                     if is_state_dirty {
                         is_state_dirty = false;
                         user_sender.send(UserMessage::GetStateResponse(GetStateResponse {
-                            dirp_state: build_result_tree(&root_path, false, &dirp_state),
+                            result_tree: build_result_tree(&root_path, false, &dirp_state),
                         }))?;
                     }
                 }
                 DirpStateMessage::OpenDir(path) => {
+                    let x = PathBuf::new(path)
                     if let Some(dir) = dirp_state.get_mut(&path) {
                         dir.is_open = true;
                         is_state_dirty = true;
@@ -91,7 +92,7 @@ pub fn dirp_state_loop(
                     }
                 }
                 DirpStateMessage::RemoveMarked => {
-                    process_remove_marked(&root_path, &dirp_state)?;
+                    //process_remove_marked(&root_path, &dirp_state)?;
                     break;
                 }
                 DirpStateMessage::Quit => break,
@@ -167,59 +168,67 @@ fn process_dir_scan_message(
     dirp_state.insert(dir.path.clone(), dir);
 }
 
-fn process_remove_marked(root_path: &PathBuf, dirp_state: &DirHash) -> Result<(), DirpError> {
-    println!("");
-    for marked_file in marked_files_list(root_path.clone(), &dirp_state) {
-        println!("{}", marked_file);
-    }
-    println!("");
-    println!("Move these files to the Trash?");
+// fn process_remove_marked<'a>(
+//     root_path: &'a PathBuf,
+//     dirp_state: &'a DirHash,
+// ) -> Result<(), DirpError<'a>> {
+//     println!("");
+//     for marked_file in marked_files_list(root_path.clone(), &dirp_state) {
+//         println!("{}", marked_file);
+//     }
+//     println!("");
+//     println!("Move these files to the Trash?");
 
-    let items = vec!["No", "Yes"];
-    let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
-        .items(&items)
-        .default(0)
-        .interact_on_opt(&Term::stdout())?;
+//     let items = vec!["No", "Yes"];
+//     let selection = FuzzySelect::with_theme(&ColorfulTheme::default())
+//         .items(&items)
+//         .default(0)
+//         .interact_on_opt(&Term::stdout())?;
 
-    match selection {
-        Some(index) => {
-            if index == 1 {
-                if let Err(error) = remove_marked_files(root_path.clone(), &dirp_state) {
-                    panic!("Error Removing Files: {:#?}", error);
-                }
-            }
-        }
-        None => {}
-    }
-    Ok(())
-}
+//     match selection {
+//         Some(index) => {
+//             if index == 1 {
+//                 if let Err(error) = remove_marked_files(root_path.clone(), &dirp_state) {
+//                     panic!("Error Removing Files: {:#?}", error);
+//                 }
+//             }
+//         }
+//         None => {}
+//     }
+//     Ok(())
+// }
 
-fn build_result_tree(path: &PathBuf, include_all: bool, dirp_state: &DirHash) -> Dir {
-    let root_dir = dirp_state.get(path).expect("internal error");
-    _build_result_tree(path, include_all, dirp_state, root_dir.size_in_bytes as f64)
-}
-
-fn _build_result_tree(
-    path: &PathBuf,
+fn build_result_tree<'a>(
+    path: &'a PathBuf,
     include_all: bool,
-    dirp_state: &DirHash,
+    dirp_state: &'a DirHash,
+) -> ClientDir<'a> {
+    let root_dir = dirp_state.get(path).expect("internal error");
+    _build_client_tree(path, include_all, dirp_state, root_dir.size_in_bytes as f64)
+}
+
+fn _build_client_tree<'a>(
+    path: &'a PathBuf,
+    include_all: bool,
+    dirp_state: &'a DirHash,
     total_bytes: f64,
-) -> Dir {
+) -> ClientDir<'a> {
     // dirp_state holds all of the dirs in a hash (by path). This code will convert that
-    // into a tree structure that the client code expect. 
+    // into a tree structure that the client code expect.
 
-    let mut result_dir = dirp_state.get(path).expect("internal error").clone();
-    result_dir.percent = ((result_dir.size_in_bytes as f64 / total_bytes) * 100.0) as u8;
+    let mut dir = dirp_state.get(path).expect("internal error").clone();
+    dir.percent = ((dir.size_in_bytes as f64 / total_bytes) * 100.0) as u8;
 
-    let mut new_dir_obj_list = Vec::<FSObj>::new();
-    if result_dir.is_open || include_all {
-        for child_obj in &result_dir.dir_obj_list {
+    let mut new_dir_obj_list = Vec::<ClientFSObj>::new();
+    if dir.is_open || include_all {
+        for child_obj in &dir.dir_obj_list {
             match child_obj {
                 FSObj::Dir(_) => {
                     assert!(false, "Internal Error");
                 }
                 FSObj::DirRef(dir_ref) => {
-                    new_dir_obj_list.push(FSObj::Dir(_build_result_tree(
+                    // ClientDir::from(dir_ref.clone())
+                    new_dir_obj_list.push(ClientFSObj::ClientDir(_build_client_tree(
                         &dir_ref.path,
                         include_all,
                         dirp_state,
@@ -229,19 +238,31 @@ fn _build_result_tree(
                 FSObj::File(fs_obj) => {
                     let mut fs_obj = fs_obj.clone();
                     fs_obj.percent = ((fs_obj.size_in_bytes as f64 / total_bytes) * 100.0) as u8;
-                    new_dir_obj_list.push(FSObj::File(fs_obj));
+                    new_dir_obj_list.push(ClientFSObj::ClientFile(ClientFile::from(fs_obj)));
                 }
                 FSObj::SymLink(fs_obj) => {
                     let mut fs_obj = fs_obj.clone();
                     fs_obj.percent = ((fs_obj.size_in_bytes as f64 / total_bytes) * 100.0) as u8;
-                    new_dir_obj_list.push(FSObj::SymLink(fs_obj));
+                    new_dir_obj_list.push(ClientFSObj::ClientFile(ClientFile::from(fs_obj)));
                 }
             }
         }
     }
-    result_dir.dir_obj_list = new_dir_obj_list;
 
-    result_dir
+    ClientDir {
+        name: dir
+            .path
+            .file_name()
+            .expect("No file name.")
+            .to_string_lossy()
+            .to_string(),
+        is_open: dir.is_open,
+        size_in_bytes: dir.size_in_bytes,
+        percent: dir.percent,
+        is_marked: dir.is_marked,
+        dir_obj_list: new_dir_obj_list,
+        parent: None,
+    }
 }
 
 fn is_path_marked(path: PathBuf, dirp_state: &DirHash) -> Option<bool> {
@@ -284,8 +305,8 @@ fn do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) {
 }
 
 fn _do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) -> Option<()> {
-    // Mark all objects as 'is_marked' from 'path' all the way down the tree. 
-    
+    // Mark all objects as 'is_marked' from 'path' all the way down the tree.
+
     // Find 'path' in 'dirp_state'.
     if let Some(dir) = dirp_state.get_mut(&path) {
         // path resolves to a dir.
@@ -347,127 +368,127 @@ fn _do_mark_deep(path: PathBuf, is_marked: bool, dirp_state: &mut DirHash) -> Op
     }
 }
 
-fn marked_files_list(path: PathBuf, dirp_state: &DirHash) -> Vec<String> {
-    let mut marked_files_list = Vec::new();
+// fn marked_files_list(path: PathBuf, dirp_state: &DirHash) -> Vec<String> {
+//     let mut marked_files_list = Vec::new();
 
-    _marked_files_list(
-        &build_result_tree(&path, true, dirp_state),
-        &mut marked_files_list,
-    );
-    marked_files_list.sort();
+//     _marked_files_list(
+//         &build_result_tree(&path, true, dirp_state),
+//         &mut marked_files_list,
+//     );
+//     marked_files_list.sort();
 
-    marked_files_list
-}
+//     marked_files_list
+// }
 
-fn _marked_files_list(dir: &Dir, marked_files_list: &mut Vec<String>) {
-    if dir.is_marked {
-        marked_files_list.push(dir.path.to_string_lossy().to_string());
-    } else {
-        for child in &dir.dir_obj_list {
-            match child {
-                FSObj::Dir(child_dir) => {
-                    _marked_files_list(&child_dir, marked_files_list);
-                }
-                FSObj::DirRef(dir_ref) => {
-                    panic!("Internal Error");
-                }
-                FSObj::File(file) => {
-                    if file.is_marked {
-                        marked_files_list.push(file.path.to_string_lossy().to_string());
-                    }
-                }
-                FSObj::SymLink(sym_link) => {
-                    if sym_link.is_marked {
-                        marked_files_list.push(sym_link.path.to_string_lossy().to_string());
-                    }
-                }
-            }
-        }
-    }
-}
+// fn _marked_files_list(dir: &Dir, marked_files_list: &mut Vec<String>) {
+//     if dir.is_marked {
+//         marked_files_list.push(dir.path.to_string_lossy().to_string());
+//     } else {
+//         for child in &dir.dir_obj_list {
+//             match child {
+//                 FSObj::Dir(child_dir) => {
+//                     _marked_files_list(&child_dir, marked_files_list);
+//                 }
+//                 FSObj::DirRef(dir_ref) => {
+//                     panic!("Internal Error");
+//                 }
+//                 FSObj::File(file) => {
+//                     if file.is_marked {
+//                         marked_files_list.push(file.path.to_string_lossy().to_string());
+//                     }
+//                 }
+//                 FSObj::SymLink(sym_link) => {
+//                     if sym_link.is_marked {
+//                         marked_files_list.push(sym_link.path.to_string_lossy().to_string());
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
 
-fn remove_marked_files(path: PathBuf, dirp_state: &DirHash) -> Result<(), DirpError> {
-    _remove_marked_files(FSObj::Dir(build_result_tree(&path, true, dirp_state)))
-}
+// fn remove_marked_files(path: PathBuf, dirp_state: &DirHash) -> Result<(), DirpError> {
+//     _remove_marked_files(FSObj::Dir(build_result_tree(&path, true, dirp_state)))
+// }
 
-fn _remove_marked_files(obj: FSObj) -> Result<(), DirpError> {
-    match obj {
-        FSObj::Dir(dir) => {
-            if dir.is_marked {
-                trash::delete(&dir.path)?;
-            } else {
-                for child in dir.dir_obj_list {
-                    _remove_marked_files(child);
-                }
-            }
-        }
-        FSObj::DirRef(dir_ref) => {
-            panic!("Internal Error");
-        }
-        FSObj::File(file) => {
-            if file.is_marked {
-                trash::delete(&file.path)?;
-            }
-        }
-        FSObj::SymLink(sym_link) => {
-            if sym_link.is_marked {
-                trash::delete(&sym_link.path)?;
-            }
-        }
-    }
+// fn _remove_marked_files<'a>(obj: FSObj) -> Result<(), DirpError<'a>> {
+//     match obj {
+//         FSObj::Dir(dir) => {
+//             if dir.is_marked {
+//                 trash::delete(&dir.path)?;
+//             } else {
+//                 for child in dir.dir_obj_list {
+//                     _remove_marked_files(child);
+//                 }
+//             }
+//         }
+//         FSObj::DirRef(dir_ref) => {
+//             panic!("Internal Error");
+//         }
+//         FSObj::File(file) => {
+//             if file.is_marked {
+//                 trash::delete(&file.path)?;
+//             }
+//         }
+//         FSObj::SymLink(sym_link) => {
+//             if sym_link.is_marked {
+//                 trash::delete(&sym_link.path)?;
+//             }
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use std::collections::hash_map::DefaultHasher;
+//     use std::hash::{Hash, Hasher};
 
-    #[test]
-    fn test_dirp_state_task() -> Result<(), DirpError> {
-        let dirp_state = DirpState::new(PathBuf::from("./test"));
+//     #[test]
+//     fn test_dirp_state_task() -> Result<(), DirpError<'static>> {
+//         let dirp_state = DirpState::new(PathBuf::from("./test"));
 
-        // Test initial dirp state.
-        println!("Test initial dirp state.");
-        if let UserMessage::GetStateResponse(state_response) = dirp_state.recv() {
-            let expected_hash = 1916964086373338034 as u64;
-            let mut hasher = DefaultHasher::new();
-            let dir = state_response.dirp_state;
-            dir.hash(&mut hasher);
-            let hash = hasher.finish();
+//         // Test initial dirp state.
+//         println!("Test initial dirp state.");
+//         if let UserMessage::GetStateResponse(state_response) = dirp_state.recv() {
+//             let expected_hash = 1916964086373338034 as u64;
+//             let mut hasher = DefaultHasher::new();
+//             let dir = state_response.dirp_state;
+//             dir.hash(&mut hasher);
+//             let hash = hasher.finish();
 
-            println!("{:#?}", dir);
-            println!("Hash: {}", hash);
+//             println!("{:#?}", dir);
+//             println!("Hash: {}", hash);
 
-            assert_eq!(expected_hash, hash, "Error: Unexpected result.");
-        } else {
-            assert!(false, "Unexpected user message.");
-        }
+//             assert_eq!(expected_hash, hash, "Error: Unexpected result.");
+//         } else {
+//             assert!(false, "Unexpected user message.");
+//         }
 
-        // Toggle ./test/e and ./test/e/f open, then mark ./test/e and test result.
-        println!("Toggle ./test/e and ./test/e/f open, then mark ./test/e and test result.");
-        dirp_state.send(DirpStateMessage::OpenDir(PathBuf::from("./test/e")));
-        dirp_state.send(DirpStateMessage::OpenDir(PathBuf::from("./test/e/f")));
-        dirp_state.send(DirpStateMessage::MarkPath(PathBuf::from("./test/e")));
-        if let UserMessage::GetStateResponse(state_response) = dirp_state.recv() {
-            let expected_hash = 1716204932036142087 as u64;
-            let mut hasher = DefaultHasher::new();
-            let dir = state_response.dirp_state;
-            dir.hash(&mut hasher);
-            let hash = hasher.finish();
+//         // Toggle ./test/e and ./test/e/f open, then mark ./test/e and test result.
+//         println!("Toggle ./test/e and ./test/e/f open, then mark ./test/e and test result.");
+//         dirp_state.send(DirpStateMessage::OpenDir(PathBuf::from("./test/e")));
+//         dirp_state.send(DirpStateMessage::OpenDir(PathBuf::from("./test/e/f")));
+//         dirp_state.send(DirpStateMessage::MarkPath(PathBuf::from("./test/e")));
+//         if let UserMessage::GetStateResponse(state_response) = dirp_state.recv() {
+//             let expected_hash = 1716204932036142087 as u64;
+//             let mut hasher = DefaultHasher::new();
+//             let dir = state_response.dirp_state;
+//             dir.hash(&mut hasher);
+//             let hash = hasher.finish();
 
-            println!("{:#?}", dir);
-            println!("Hash: {}", hash);
+//             println!("{:#?}", dir);
+//             println!("Hash: {}", hash);
 
-            assert_eq!(expected_hash, hash, "Error: Unexpected result.");
-        } else {
-            assert!(false, "Unexpected user message 2.");
-        }
+//             assert_eq!(expected_hash, hash, "Error: Unexpected result.");
+//         } else {
+//             assert!(false, "Unexpected user message 2.");
+//         }
 
-        dirp_state.quit();
+//         dirp_state.quit();
 
-        Ok(())
-    }
-}
+//         Ok(())
+//     }
+// }

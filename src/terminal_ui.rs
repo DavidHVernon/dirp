@@ -1,4 +1,3 @@
-use crate::dir_pruner::DirpState;
 use crate::tui_rs_boilerplate::AppRow;
 use crate::tui_rs_boilerplate::{step_app, App};
 use crate::types::*;
@@ -56,18 +55,18 @@ fn input_thread(user_sender: Sender<UserMessage>) -> Result<(), DirpError> {
     }
 }
 
-fn dirp_state_to_i_state(
-    fs_obj: &mut FSObj,
+fn result_tree_to_i_state(
+    result_tree: &mut ClientFSObj,
     level: u32,
     i_state: &mut Vec<IntermediateState>,
 ) -> Option<()> {
-    match fs_obj {
-        FSObj::Dir(dir) => {
+    match result_tree {
+        ClientFSObj::ClientDir(dir) => {
             let flipper = match dir.is_open {
                 true => "⏷",
                 false => "⏵",
             };
-            let name = dir.path.file_name()?.to_string_lossy();
+            let name = dir.name;
             let name = format!("{}{} {}", indent_to_level(level), flipper, name);
             let size = human_readable_bytes(dir.size_in_bytes);
             let percent = format!("{}%", dir.percent);
@@ -75,30 +74,20 @@ fn dirp_state_to_i_state(
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
                 is_marked: dir.is_marked,
-                path: dir.path.clone(),
+                name: dir.name,
             });
 
             dir.dir_obj_list
                 .sort_by(|a, b| b.size_in_bytes().cmp(&a.size_in_bytes()));
 
-            for child_obj in &mut dir.dir_obj_list {
-                dirp_state_to_i_state(child_obj, level + 1, i_state);
+            if dir.is_open {
+                for child_obj in &mut dir.dir_obj_list {
+                    result_tree_to_i_state(child_obj, level + 1, i_state);
+                }
             }
         }
-        FSObj::DirRef(dir_ref) => {
-            let name = dir_ref.path.file_name()?.to_string_lossy();
-            let name = format!("{}> {}", indent_to_level(level), name);
-            let size = human_readable_bytes(dir_ref.size_in_bytes);
-            let percent = format!("{}%", dir_ref.percent);
-
-            i_state.push(IntermediateState {
-                ui_row: vec![name, percent, size],
-                is_marked: dir_ref.is_marked,
-                path: dir_ref.path.clone(),
-            });
-        }
-        FSObj::File(file) => {
-            let name = file.path.file_name()?.to_string_lossy();
+        ClientFSObj::ClientFile(file) => {
+            let name = file.name;
             let name = format!("{}  {}", indent_to_level(level), name);
             let size = human_readable_bytes(file.size_in_bytes);
             let percent = format!("{}%", file.percent);
@@ -106,19 +95,7 @@ fn dirp_state_to_i_state(
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
                 is_marked: file.is_marked,
-                path: file.path.clone(),
-            });
-        }
-        FSObj::SymLink(sym_link) => {
-            let name = sym_link.path.file_name()?.to_string_lossy();
-            let name = format!("{}  {}", indent_to_level(level), name);
-            let size = human_readable_bytes(sym_link.size_in_bytes);
-            let percent = format!("{}%", sym_link.percent);
-
-            i_state.push(IntermediateState {
-                ui_row: vec![name, percent, size],
-                is_marked: sym_link.is_marked,
-                path: sym_link.path.clone(),
+                name: file.name,
             });
         }
     };
@@ -175,8 +152,8 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
                 UserMessage::GetStateResponse(user_message) => {
                     // create app and run it
                     i_state.clear();
-                    dirp_state_to_i_state(
-                        &mut FSObj::Dir(user_message.dirp_state),
+                    result_tree_to_i_state(
+                        &mut ClientFSObj::ClientDir(user_message.result_tree),
                         1,
                         &mut i_state,
                     )
@@ -189,19 +166,19 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
                     do_prev = true;
                 }
                 UserMessage::OpenDir => {
-                    dirp_state.send(DirpStateMessage::OpenDir(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::OpenDir(i_state[state].name));
                 }
                 UserMessage::CloseDir => {
-                    dirp_state.send(DirpStateMessage::CloseDir(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::CloseDir(i_state[state].name));
                 }
                 UserMessage::ToggleDir => {
-                    dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].name));
                 }
                 UserMessage::MarkPath => {
-                    dirp_state.send(DirpStateMessage::MarkPath(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::MarkPath(i_state[state].name));
                 }
                 UserMessage::UnmarkPath => {
-                    dirp_state.send(DirpStateMessage::UnmarkPath(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::UnmarkPath(i_state[state].name));
                 }
                 UserMessage::ToggleMarkPath => {
                     dirp_state.send(DirpStateMessage::ToggleMarkPath(

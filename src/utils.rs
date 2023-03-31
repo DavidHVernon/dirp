@@ -20,7 +20,7 @@ pub fn scan_dir_path(
     dir_path: PathBuf,
     is_open: bool,
     dirp_state_sender: Sender<DirpStateMessage>,
-) -> Result<(), DirpError> {
+) -> Result<(), DirpError<'static>> {
     // Create a list containing a FSObj for each directory item in the
     // specified dir
     let mut fs_obj_list = FSObjList::new();
@@ -115,7 +115,7 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn test_scan_dir_path_task() -> Result<(), DirpError> {
+    fn test_scan_dir_path_task() -> Result<(), DirpError<'static>> {
         let threadpool = ThreadPool::new(30);
         let (sender, receiver) = channel();
 
