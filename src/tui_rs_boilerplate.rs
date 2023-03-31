@@ -1,4 +1,4 @@
-use std::{cell, io, path::PathBuf};
+use std::{io, path::PathBuf};
 use tui::{
     backend::Backend,
     layout::{Constraint, Layout},

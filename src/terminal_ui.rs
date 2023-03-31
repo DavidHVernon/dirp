@@ -7,7 +7,6 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use dialoguer::console::{self};
 use std::{error::Error, io};
 use std::{sync::mpsc::Sender, thread};
 use tui::{backend::CrosstermBackend, Terminal};
@@ -161,7 +160,7 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
     let mut do_remove_marked = false;
 
     let app_state = i_state_to_app_state(&i_state);
-    let mut app = App::new(path.clone(), app_state);
+    let app = App::new(path.clone(), app_state);
 
     let _ = step_app(&mut terminal, app);
 

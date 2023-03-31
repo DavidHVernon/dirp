@@ -8,7 +8,7 @@ use std::{
 };
 
 pub type FSObjList = Vec<FSObj>;
-pub type DirHash = HashMap<PathBuf, Dir>;
+pub type DirHash = HashMap<String, Dir>;
 
 #[derive(Debug, Clone, Hash)]
 pub enum FSObj {
