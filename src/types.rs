@@ -20,7 +20,7 @@ pub enum FSObj {
 
 #[derive(Debug, Clone, Hash)]
 pub struct File {
-    pub path: PathBuf,
+    pub path: String,
     pub size_in_bytes: u64,
     pub percent: u8,
     pub is_marked: bool,
@@ -28,7 +28,7 @@ pub struct File {
 
 #[derive(Debug, Clone, Hash)]
 pub struct SymLink {
-    pub path: PathBuf,
+    pub path: String,
     pub size_in_bytes: u64,
     pub percent: u8,
     pub is_marked: bool,
@@ -36,17 +36,17 @@ pub struct SymLink {
 
 #[derive(Debug, Clone, Hash)]
 pub struct Dir {
-    pub path: PathBuf,
-    pub is_open: bool,
+    pub path: String,
     pub size_in_bytes: u64,
     pub percent: u8,
     pub is_marked: bool,
+    pub is_open: bool,
     pub dir_obj_list: FSObjList,
 }
 
 #[derive(Debug, Clone, Hash)]
 pub struct DirRef {
-    pub path: PathBuf,
+    pub path: String,
     pub is_open: bool,
     pub size_in_bytes: u64,
     pub percent: u8,
@@ -72,12 +72,12 @@ impl SizeInBytes for FSObj {
 pub enum DirpStateMessage {
     DirScanMessage(Dir),
     GetStateRequest,
-    OpenDir(PathBuf),
-    CloseDir(PathBuf),
-    ToggleDir(PathBuf),
-    MarkPath(PathBuf),
-    UnmarkPath(PathBuf),
-    ToggleMarkPath(PathBuf),
+    OpenDir(String),
+    CloseDir(String),
+    ToggleDir(String),
+    MarkPath(String),
+    UnmarkPath(String),
+    ToggleMarkPath(String),
     RemoveMarked,
     Timer,
     Quit,
@@ -106,7 +106,7 @@ pub struct GetStateResponse {
 pub struct IntermediateState {
     pub ui_row: Vec<String>,
     pub is_marked: bool,
-    pub path: PathBuf,
+    pub path: String,
 }
 
 pub struct Args {
@@ -121,7 +121,7 @@ pub struct DirpState {
 }
 
 impl DirpState {
-    pub fn new(path: PathBuf) -> DirpState {
+    pub fn new(path: String) -> DirpState {
         let (dirp_state_sender, dirp_state_receiver) = channel();
         let (user_sender, user_receiver) = channel();
 

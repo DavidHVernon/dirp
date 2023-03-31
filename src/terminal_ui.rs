@@ -65,7 +65,7 @@ fn dirp_state_to_i_state(
                 true => "⏷",
                 false => "⏵",
             };
-            let name = dir.path.file_name()?.to_string_lossy();
+            let name = file_name(&dir.path)?;
             let name = format!("{}{} {}", indent_to_level(level), flipper, name);
             let size = human_readable_bytes(dir.size_in_bytes);
             let percent = format!("{}%", dir.percent);
@@ -84,7 +84,7 @@ fn dirp_state_to_i_state(
             }
         }
         FSObj::DirRef(dir_ref) => {
-            let name = dir_ref.path.file_name()?.to_string_lossy();
+            let name = file_name(&dir_ref.path)?;
             let name = format!("{}> {}", indent_to_level(level), name);
             let size = human_readable_bytes(dir_ref.size_in_bytes);
             let percent = format!("{}%", dir_ref.percent);
@@ -96,7 +96,7 @@ fn dirp_state_to_i_state(
             });
         }
         FSObj::File(file) => {
-            let name = file.path.file_name()?.to_string_lossy();
+            let name = file_name(&file.path)?;
             let name = format!("{}  {}", indent_to_level(level), name);
             let size = human_readable_bytes(file.size_in_bytes);
             let percent = format!("{}%", file.percent);
@@ -108,7 +108,7 @@ fn dirp_state_to_i_state(
             });
         }
         FSObj::SymLink(sym_link) => {
-            let name = sym_link.path.file_name()?.to_string_lossy();
+            let name = file_name(&sym_link.path)?;
             let name = format!("{}  {}", indent_to_level(level), name);
             let size = human_readable_bytes(sym_link.size_in_bytes);
             let percent = format!("{}%", sym_link.percent);
@@ -142,7 +142,7 @@ fn i_state_to_app_state<'a>(i_state: &'a Vec<IntermediateState>) -> Vec<AppRow<'
 }
 
 pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
-    let path = args.path;
+    let path = args.path.to_string_lossy().to_string();
 
     // setup terminal
     enable_raw_mode()?;

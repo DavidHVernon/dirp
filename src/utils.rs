@@ -1,10 +1,11 @@
 use crate::types::*;
+use std::str::FromStr;
 use std::sync::mpsc::Sender;
 use std::{fs, os::macos::fs::MetadataExt, path::PathBuf};
 use threadpool::ThreadPool;
 
 pub fn scan_dir_path_in_threadpool(
-    dir_path: PathBuf,
+    dir_path: String,
     is_open: bool,
     dirp_state_sender: Sender<DirpStateMessage>,
     threadpool: &ThreadPool,
@@ -17,7 +18,7 @@ pub fn scan_dir_path_in_threadpool(
 }
 
 pub fn scan_dir_path(
-    dir_path: PathBuf,
+    dir_path: String,
     is_open: bool,
     dirp_state_sender: Sender<DirpStateMessage>,
 ) -> Result<(), DirpError> {
@@ -30,6 +31,7 @@ pub fn scan_dir_path(
             for dir_entry in read_dir {
                 let dir_entry = dir_entry?;
                 let obj_path = dir_entry.path();
+                let obj_path_string = obj_path.to_string_lossy().to_string();
                 let meta_data = dir_entry.metadata()?;
 
                 if dir_entry.file_name() == ".DS_Store" {
@@ -38,7 +40,7 @@ pub fn scan_dir_path(
 
                 if obj_path.is_dir() {
                     fs_obj_list.push(FSObj::DirRef(DirRef {
-                        path: obj_path.clone(),
+                        path: obj_path_string,
                         is_open,
                         size_in_bytes: 0,
                         percent: 0,
@@ -48,14 +50,14 @@ pub fn scan_dir_path(
                     // NOTE: Symlink needs to be checked before file because symlinks
                     // are files.
                     fs_obj_list.push(FSObj::SymLink(SymLink {
-                        path: obj_path,
+                        path: obj_path_string,
                         size_in_bytes: 0,
                         percent: 0,
                         is_marked: false,
                     }));
                 } else if obj_path.is_file() {
                     fs_obj_list.push(FSObj::File(File {
-                        path: obj_path,
+                        path: obj_path_string,
                         size_in_bytes: meta_data.st_size(),
                         percent: 0,
                         is_marked: false,
@@ -64,11 +66,7 @@ pub fn scan_dir_path(
             }
         }
         Err(error) => {
-            println!(
-                "Cannot open file: {} (ignoring) Err: {}.",
-                dir_path.to_string_lossy(),
-                error
-            );
+            println!("Cannot open file: {} (ignoring) Err: {}.", dir_path, error);
         }
     }
 
@@ -119,7 +117,7 @@ mod tests {
         let threadpool = ThreadPool::new(30);
         let (sender, receiver) = channel();
 
-        scan_dir_path_in_threadpool(PathBuf::from("./test/a"), true, sender.clone(), &threadpool);
+        scan_dir_path_in_threadpool("./test/a".to_string(), true, sender.clone(), &threadpool);
 
         sleep(Duration::from_secs(1));
 
@@ -140,4 +138,22 @@ mod tests {
 
         Ok(())
     }
+}
+
+pub fn parent_file_path(file_path: &String) -> Option<String> {
+    if let Ok(path) = PathBuf::from_str(&file_path) {
+        if let Some(parent) = path.parent() {
+            return Some(parent.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+pub fn file_name(file_path: &String) -> Option<String> {
+    if let Ok(path) = PathBuf::from_str(file_path) {
+        if let Some(file_name) = path.file_name() {
+            return Some(file_name.to_string_lossy().to_string());
+        }
+    }
+    None
 }

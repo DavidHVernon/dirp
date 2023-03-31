@@ -8,7 +8,7 @@ use tui::{
 };
 
 pub struct App<'a> {
-    pub path: PathBuf,
+    pub path: String,
     state: TableState,
     items: Vec<AppRow<'a>>,
 }
@@ -19,7 +19,7 @@ pub struct AppRow<'a> {
 }
 
 impl<'a> App<'a> {
-    pub fn new(path: PathBuf, items: Vec<AppRow<'a>>) -> App<'a> {
+    pub fn new(path: String, items: Vec<AppRow<'a>>) -> App<'a> {
         App {
             path,
             state: TableState::default(),
@@ -104,7 +104,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         Row::new(cells).height(height as u16).bottom_margin(1)
     });
 
-    let path = app.path.to_string_lossy();
+    let path = app.path.clone();
     let path = format!(" {} ", path);
 
     let t = Table::new(rows)
