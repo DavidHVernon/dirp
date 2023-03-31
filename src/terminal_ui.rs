@@ -1,4 +1,3 @@
-use crate::dir_pruner::DirpState;
 use crate::tui_rs_boilerplate::AppRow;
 use crate::tui_rs_boilerplate::{step_app, App};
 use crate::types::*;
