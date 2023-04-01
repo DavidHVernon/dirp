@@ -65,15 +65,14 @@ fn dirp_state_to_i_state(
                 true => "⏷",
                 false => "⏵",
             };
-            let name = file_name(&dir.path)?;
-            let name = format!("{}{} {}", indent_to_level(level), flipper, name);
+            let name = format!("{}{} {}", indent_to_level(level), flipper, &dir.name);
             let size = human_readable_bytes(dir.size_in_bytes);
             let percent = format!("{}%", dir.percent);
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
                 is_marked: dir.is_marked,
-                path: dir.path.clone(),
+                path: dir.path(),
             });
 
             dir.dir_obj_list
@@ -84,39 +83,36 @@ fn dirp_state_to_i_state(
             }
         }
         FSObj::DirRef(dir_ref) => {
-            let name = file_name(&dir_ref.path)?;
-            let name = format!("{}> {}", indent_to_level(level), name);
+            let name = format!("{}> {}", indent_to_level(level), &dir_ref.path());
             let size = human_readable_bytes(dir_ref.size_in_bytes);
             let percent = format!("{}%", dir_ref.percent);
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
                 is_marked: dir_ref.is_marked,
-                path: dir_ref.path.clone(),
+                path: dir_ref.path(),
             });
         }
         FSObj::File(file) => {
-            let name = file_name(&file.path)?;
-            let name = format!("{}  {}", indent_to_level(level), name);
+            let name = format!("{}  {}", indent_to_level(level), &file.name);
             let size = human_readable_bytes(file.size_in_bytes);
             let percent = format!("{}%", file.percent);
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
                 is_marked: file.is_marked,
-                path: file.path.clone(),
+                path: file.path(),
             });
         }
         FSObj::SymLink(sym_link) => {
-            let name = file_name(&sym_link.path)?;
-            let name = format!("{}  {}", indent_to_level(level), name);
+            let name = format!("{}  {}", indent_to_level(level), &sym_link.name);
             let size = human_readable_bytes(sym_link.size_in_bytes);
             let percent = format!("{}%", sym_link.percent);
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
                 is_marked: sym_link.is_marked,
-                path: sym_link.path.clone(),
+                path: sym_link.path(),
             });
         }
     };

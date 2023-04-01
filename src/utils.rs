@@ -24,7 +24,17 @@ pub fn scan_dir_path(
 ) -> Result<(), DirpError> {
     // Create a list containing a FSObj for each directory item in the
     // specified dir
-    let mut fs_obj_list = FSObjList::new();
+
+    let mut new_dir = Dir {
+        parent: None,
+        name: file_name(&dir_path),
+        is_open,
+        size_in_bytes: 0,
+        percent: 0,
+        is_marked: false,
+        dir_obj_list: FSObjList::new(),
+    };
+    let dir_obj_list = &mut new_dir.dir_obj_list;
 
     match fs::read_dir(dir_path.clone()) {
         Ok(read_dir) => {
@@ -39,8 +49,9 @@ pub fn scan_dir_path(
                 }
 
                 if obj_path.is_dir() {
-                    fs_obj_list.push(FSObj::DirRef(DirRef {
-                        path: obj_path_string,
+                    dir_obj_list.push(FSObj::DirRef(DirRef {
+                        parent: Some(&new_dir),
+                        name: file_name(&obj_path_string),
                         is_open,
                         size_in_bytes: 0,
                         percent: 0,
@@ -49,15 +60,17 @@ pub fn scan_dir_path(
                 } else if obj_path.is_symlink() {
                     // NOTE: Symlink needs to be checked before file because symlinks
                     // are files.
-                    fs_obj_list.push(FSObj::SymLink(SymLink {
-                        path: obj_path_string,
+                    dir_obj_list.push(FSObj::SymLink(SymLink {
+                        parent: Some(&new_dir),
+                        name: file_name(&obj_path_string),
                         size_in_bytes: 0,
                         percent: 0,
                         is_marked: false,
                     }));
                 } else if obj_path.is_file() {
-                    fs_obj_list.push(FSObj::File(File {
-                        path: obj_path_string,
+                    dir_obj_list.push(FSObj::File(File {
+                        parent: Some(&new_dir),
+                        name: file_name(&obj_path_string),
                         size_in_bytes: meta_data.st_size(),
                         percent: 0,
                         is_marked: false,
@@ -71,14 +84,7 @@ pub fn scan_dir_path(
     }
 
     // Sent it to the state managing thread.
-    dirp_state_sender.send(DirpStateMessage::DirScanMessage(Dir {
-        path: dir_path,
-        is_open,
-        size_in_bytes: 0,
-        percent: 0,
-        is_marked: false,
-        dir_obj_list: fs_obj_list,
-    }))?;
+    dirp_state_sender.send(DirpStateMessage::DirScanMessage(new_dir))?;
 
     Ok(())
 }
@@ -149,11 +155,11 @@ pub fn parent_file_path(file_path: &String) -> Option<String> {
     None
 }
 
-pub fn file_name(file_path: &String) -> Option<String> {
+pub fn file_name(file_path: &String) -> String {
     if let Ok(path) = PathBuf::from_str(file_path) {
         if let Some(file_name) = path.file_name() {
-            return Some(file_name.to_string_lossy().to_string());
+            return file_name.to_string_lossy().to_string();
         }
     }
-    None
+    panic!("at the disco")
 }
