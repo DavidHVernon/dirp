@@ -65,15 +65,14 @@ fn dirp_state_to_i_state(
                 true => "⏷",
                 false => "⏵",
             };
-            let name = file_name(&dir.path)?;
-            let name = format!("{}{} {}", indent_to_level(level), flipper, name);
+            let name = format!("{}{} {}", indent_to_level(level), flipper, dir.name);
             let size = human_readable_bytes(dir.size_in_bytes);
             let percent = format!("{}%", dir.percent);
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
                 is_marked: dir.is_marked,
-                path: dir.path.clone(),
+                name: dir.name.clone(),
             });
 
             dir.dir_obj_list
@@ -84,39 +83,36 @@ fn dirp_state_to_i_state(
             }
         }
         FSObj::DirRef(dir_ref) => {
-            let name = file_name(&dir_ref.path)?;
-            let name = format!("{}> {}", indent_to_level(level), name);
+            let name = format!("{}> {}", indent_to_level(level), dir_ref.name);
             let size = human_readable_bytes(dir_ref.size_in_bytes);
             let percent = format!("{}%", dir_ref.percent);
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
                 is_marked: dir_ref.is_marked,
-                path: dir_ref.path.clone(),
+                name: dir_ref.name.clone(),
             });
         }
         FSObj::File(file) => {
-            let name = file_name(&file.path)?;
-            let name = format!("{}  {}", indent_to_level(level), name);
+            let name = format!("{}  {}", indent_to_level(level), file.name);
             let size = human_readable_bytes(file.size_in_bytes);
             let percent = format!("{}%", file.percent);
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
                 is_marked: file.is_marked,
-                path: file.path.clone(),
+                name: file.name.clone(),
             });
         }
         FSObj::SymLink(sym_link) => {
-            let name = file_name(&sym_link.path)?;
-            let name = format!("{}  {}", indent_to_level(level), name);
+            let name = format!("{}  {}", indent_to_level(level), sym_link.name);
             let size = human_readable_bytes(sym_link.size_in_bytes);
             let percent = format!("{}%", sym_link.percent);
 
             i_state.push(IntermediateState {
                 ui_row: vec![name, percent, size],
                 is_marked: sym_link.is_marked,
-                path: sym_link.path.clone(),
+                name: sym_link.name.clone(),
             });
         }
     };
@@ -150,7 +146,7 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
-    let dirp_state = DirpState::new(path.clone());
+    let dirp_state = DirpStateThread::new(path.clone());
 
     input_thread_spawn(dirp_state.user_sender.clone());
 
@@ -187,23 +183,23 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
                     do_prev = true;
                 }
                 UserMessage::OpenDir => {
-                    dirp_state.send(DirpStateMessage::OpenDir(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::OpenDir(i_state[state].name.clone()));
                 }
                 UserMessage::CloseDir => {
-                    dirp_state.send(DirpStateMessage::CloseDir(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::CloseDir(i_state[state].name.clone()));
                 }
                 UserMessage::ToggleDir => {
-                    dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].name.clone()));
                 }
                 UserMessage::MarkPath => {
-                    dirp_state.send(DirpStateMessage::MarkPath(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::MarkPath(i_state[state].name.clone()));
                 }
                 UserMessage::UnmarkPath => {
-                    dirp_state.send(DirpStateMessage::UnmarkPath(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::UnmarkPath(i_state[state].name.clone()));
                 }
                 UserMessage::ToggleMarkPath => {
                     dirp_state.send(DirpStateMessage::ToggleMarkPath(
-                        i_state[state].path.clone(),
+                        i_state[state].name.clone(),
                     ));
                 }
                 UserMessage::RemoveMarked => {

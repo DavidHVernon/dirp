@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::sync::mpsc::Sender;
 use std::{fs, os::macos::fs::MetadataExt, path::PathBuf};
 use threadpool::ThreadPool;
+use uuid::Uuid;
 
 pub fn scan_dir_path_in_threadpool(
     dir_path: String,
@@ -24,6 +25,7 @@ pub fn scan_dir_path(
 ) -> Result<(), DirpError> {
     // Create a list containing a FSObj for each directory item in the
     // specified dir
+    let dir_id = Uuid::new_v4();
     let mut fs_obj_list = FSObjList::new();
 
     match fs::read_dir(dir_path.clone()) {
@@ -31,7 +33,11 @@ pub fn scan_dir_path(
             for dir_entry in read_dir {
                 let dir_entry = dir_entry?;
                 let obj_path = dir_entry.path();
-                let obj_path_string = obj_path.to_string_lossy().to_string();
+                let obj_name = obj_path
+                    .file_name()
+                    .expect("oops!")
+                    .to_string_lossy()
+                    .to_string();
                 let meta_data = dir_entry.metadata()?;
 
                 if dir_entry.file_name() == ".DS_Store" {
@@ -40,7 +46,8 @@ pub fn scan_dir_path(
 
                 if obj_path.is_dir() {
                     fs_obj_list.push(FSObj::DirRef(DirRef {
-                        path: obj_path_string,
+                        parent_id: Some(dir_id),
+                        name: obj_name,
                         is_open,
                         size_in_bytes: 0,
                         percent: 0,
@@ -50,14 +57,16 @@ pub fn scan_dir_path(
                     // NOTE: Symlink needs to be checked before file because symlinks
                     // are files.
                     fs_obj_list.push(FSObj::SymLink(SymLink {
-                        path: obj_path_string,
+                        parent_id: Some(dir_id),
+                        name: obj_name,
                         size_in_bytes: 0,
                         percent: 0,
                         is_marked: false,
                     }));
                 } else if obj_path.is_file() {
                     fs_obj_list.push(FSObj::File(File {
-                        path: obj_path_string,
+                        parent_id: Some(dir_id),
+                        name: obj_name,
                         size_in_bytes: meta_data.st_size(),
                         percent: 0,
                         is_marked: false,
@@ -72,7 +81,8 @@ pub fn scan_dir_path(
 
     // Sent it to the state managing thread.
     dirp_state_sender.send(DirpStateMessage::DirScanMessage(Dir {
-        path: dir_path,
+        parent_id: None,
+        name: dir_name(dir_path),
         is_open,
         size_in_bytes: 0,
         percent: 0,
@@ -81,6 +91,13 @@ pub fn scan_dir_path(
     }))?;
 
     Ok(())
+}
+
+pub fn dir_name(path: String) -> String {
+    match path.split("/").collect::<Vec<&str>>().last() {
+        Some(dir_name) => (*dir_name).to_string(),
+        None => panic!("invalid path name"),
+    }
 }
 
 pub fn indent_to_level(level: u32) -> String {
