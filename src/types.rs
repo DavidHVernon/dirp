@@ -1,5 +1,3 @@
-use uuid::Uuid;
-
 use crate::dir_pruner::dirp_state_thread_spawn;
 use std::{
     collections::HashMap,
@@ -22,8 +20,7 @@ pub enum FSObj {
 
 #[derive(Debug, Clone, Hash)]
 pub struct File {
-    pub parent_id: Option<Uuid>,
-    pub name: String,
+    pub path: String,
     pub size_in_bytes: u64,
     pub percent: u8,
     pub is_marked: bool,
@@ -31,8 +28,7 @@ pub struct File {
 
 #[derive(Debug, Clone, Hash)]
 pub struct SymLink {
-    pub parent_id: Option<Uuid>,
-    pub name: String,
+    pub path: String,
     pub size_in_bytes: u64,
     pub percent: u8,
     pub is_marked: bool,
@@ -40,9 +36,7 @@ pub struct SymLink {
 
 #[derive(Debug, Clone, Hash)]
 pub struct Dir {
-    pub id: Uuid,
-    pub parent_id: Option<Uuid>,
-    pub name: String,
+    pub path: String,
     pub size_in_bytes: u64,
     pub percent: u8,
     pub is_marked: bool,
@@ -52,78 +46,11 @@ pub struct Dir {
 
 #[derive(Debug, Clone, Hash)]
 pub struct DirRef {
-    pub id: Uuid,
-    pub parent_id: Option<Uuid>,
-    pub name: String,
+    pub path: String,
     pub is_open: bool,
     pub size_in_bytes: u64,
     pub percent: u8,
     pub is_marked: bool,
-}
-
-impl Dir {
-    pub fn path(&self, dirp_state: &DirpState) -> String {
-        let mut path = self.name.clone();
-        let mut parent_id_opt = self.parent_id;
-        while let Some(parent_id) = &parent_id_opt {
-            let parent = dirp_state.get_dir_ref_by_uuid(parent_id);
-            path = format!("{}/{}", parent.name, path);
-            parent_id_opt = parent.parent_id;
-        }
-
-        path
-    }
-}
-
-impl DirRef {
-    pub fn path(&self, dirp_state: &DirpState) -> String {
-        let mut path = self.name.clone();
-        let mut parent_id_opt = self.parent_id;
-        while let Some(parent_id) = &parent_id_opt {
-            let parent = dirp_state.get_dir_ref_by_uuid(parent_id);
-            path = format!("{}/{}", parent.name, path);
-            parent_id_opt = parent.parent_id;
-        }
-
-        path
-    }
-}
-
-impl File {
-    pub fn path(&self, dirp_state: &DirpState) -> String {
-        let mut path = self.name.clone();
-        if let Some(parent_id) = &self.parent_id {
-            let parent_path = dirp_state.get_dir_ref_by_uuid(parent_id).path(&dirp_state);
-            path = parent_path + &path;
-        }
-        path
-    }
-}
-
-impl SymLink {
-    pub fn path(&self, dirp_state: &DirpState) -> String {
-        let mut path = self.name.clone();
-        if let Some(parent_id) = &self.parent_id {
-            let parent_path = dirp_state.get_dir_ref_by_uuid(parent_id).path(&dirp_state);
-            path = parent_path + &path;
-        }
-        path
-    }
-}
-
-pub trait Path {
-    fn path(&self, dirp_state: &DirpState) -> String;
-}
-
-impl Path for FSObj {
-    fn path(&self, dirp_state: &DirpState) -> String {
-        match self {
-            FSObj::Dir(o) => o.path(dirp_state),
-            FSObj::DirRef(o) => o.path(dirp_state),
-            FSObj::File(o) => o.path(dirp_state),
-            FSObj::SymLink(o) => o.path(dirp_state),
-        }
-    }
 }
 
 pub trait SizeInBytes {
@@ -179,84 +106,22 @@ pub struct GetStateResponse {
 pub struct IntermediateState {
     pub ui_row: Vec<String>,
     pub is_marked: bool,
-    pub name: String,
+    pub path: String,
 }
 
 pub struct Args {
     pub path: PathBuf,
 }
 
-#[derive(Debug)]
 pub struct DirpState {
-    uuid_to_dir: HashMap<Uuid, Dir>,
-    path_to_uuid: HashMap<String, Uuid>,
-}
-
-impl DirpState {
-    pub fn new() -> DirpState {
-        DirpState {
-            uuid_to_dir: HashMap::new(),
-            path_to_uuid: HashMap::new(),
-        }
-    }
-
-    pub fn insert(&mut self, path: String, dir: Dir) -> Option<Dir> {
-        let uuid = Uuid::new_v4();
-        self.path_to_uuid.insert(path, uuid.clone());
-        self.uuid_to_dir.insert(uuid, dir)
-    }
-
-    pub fn path_exists(&self, path: &String) -> bool {
-        match self.path_to_uuid.get(path) {
-            Some(uuid) => true,
-            None => false,
-        }
-    }
-
-    pub fn get_dir_ref_by_uuid(&self, uuid: &Uuid) -> &Dir {
-        match self.uuid_to_dir.get(uuid) {
-            Some(dir) => dir,
-            None => panic!("Invalid call to dir_ref_by_uuid"),
-        }
-    }
-
-    pub fn get_dir_ref_mut_by_uuid(&mut self, uuid: &Uuid) -> &mut Dir {
-        match self.uuid_to_dir.get_mut(uuid) {
-            Some(dir) => dir,
-            None => panic!("Invalid call to dir_ref_by_uuid"),
-        }
-    }
-
-    pub fn get_dir_ref_by_path(&self, path: &String) -> &Dir {
-        match self.path_to_uuid.get(path) {
-            Some(uuid) => match self.uuid_to_dir.get(uuid) {
-                Some(dir) => dir,
-                None => panic!("Invalid call to dir_ref_by_path"),
-            },
-            None => panic!("Invalid call to dir_ref_by_path"),
-        }
-    }
-
-    pub fn get_dir_ref_mut_by_path(&mut self, path: &String) -> &mut Dir {
-        match self.path_to_uuid.get(path) {
-            Some(uuid) => match self.uuid_to_dir.get_mut(uuid) {
-                Some(dir) => dir,
-                None => panic!("Invalid call to dir_ref_by_path"),
-            },
-            None => panic!("Invalid call to dir_ref_by_path"),
-        }
-    }
-}
-
-pub struct DirpStateThread {
     pub user_receiver: Receiver<UserMessage>,
     pub user_sender: Sender<UserMessage>,
     dirp_state_sender: Sender<DirpStateMessage>,
     pub thread_handle: JoinHandle<()>,
 }
 
-impl DirpStateThread {
-    pub fn new(path: String) -> DirpStateThread {
+impl DirpState {
+    pub fn new(path: String) -> DirpState {
         let (dirp_state_sender, dirp_state_receiver) = channel();
         let (user_sender, user_receiver) = channel();
 
@@ -268,7 +133,7 @@ impl DirpStateThread {
             dirp_state_receiver,
         );
 
-        DirpStateThread {
+        DirpState {
             user_receiver,
             user_sender,
             dirp_state_sender,

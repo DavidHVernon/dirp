@@ -1,6 +1,5 @@
 use crate::types::*;
 use crate::utils::*;
-use chrono::format::format;
 use chrono::Duration;
 use console::Term;
 use dialoguer::{console, theme::ColorfulTheme, FuzzySelect};
@@ -18,7 +17,7 @@ pub fn dirp_state_loop(
     dirp_state_sender: Sender<DirpStateMessage>,
     dirp_state_receiver: Receiver<DirpStateMessage>,
 ) -> Result<(), DirpError> {
-    let mut dirp_state = DirpState::new();
+    let mut dirp_state = DirHash::new();
     let threadpool = ThreadPool::new(30);
     let mut is_state_dirty = false;
 
@@ -57,19 +56,22 @@ pub fn dirp_state_loop(
                     }
                 }
                 DirpStateMessage::OpenDir(path) => {
-                    let dir = dirp_state.get_dir_ref_mut_by_path(&path);
-                    dir.is_open = true;
-                    is_state_dirty = true;
+                    if let Some(dir) = dirp_state.get_mut(&path) {
+                        dir.is_open = true;
+                        is_state_dirty = true;
+                    }
                 }
                 DirpStateMessage::CloseDir(path) => {
-                    let dir = dirp_state.get_dir_ref_mut_by_path(&path);
-                    dir.is_open = false;
-                    is_state_dirty = true;
+                    if let Some(dir) = dirp_state.get_mut(&path) {
+                        dir.is_open = false;
+                        is_state_dirty = true;
+                    }
                 }
                 DirpStateMessage::ToggleDir(path) => {
-                    let dir = dirp_state.get_dir_ref_mut_by_path(&path);
-                    dir.is_open = !dir.is_open;
-                    is_state_dirty = true;
+                    if let Some(dir) = dirp_state.get_mut(&path) {
+                        dir.is_open = !dir.is_open;
+                        is_state_dirty = true;
+                    }
                 }
                 DirpStateMessage::MarkPath(path) => {
                     do_mark_deep(&path, true, &mut dirp_state);
@@ -119,7 +121,7 @@ pub fn dirp_state_thread_spawn(
 
 fn process_dir_scan_message(
     mut dir: Dir,
-    dirp_state: &mut DirpState,
+    dirp_state: &mut DirHash,
     dirp_state_sender: &Sender<DirpStateMessage>,
     threadpool: &ThreadPool,
 ) {
@@ -135,7 +137,7 @@ fn process_dir_scan_message(
             FSObj::DirRef(dir_ref) => {
                 // Recurse
                 scan_dir_path_in_threadpool(
-                    dir_ref.path(dirp_state),
+                    dir_ref.path.clone(),
                     false,
                     dirp_state_sender.clone(),
                     &threadpool,
@@ -152,18 +154,19 @@ fn process_dir_scan_message(
     }
 
     // Resize parent dirs.
-    let mut parent_path_opt = parent_file_path(&dir.path(&dirp_state));
+    let mut parent_path_opt = parent_file_path(&dir.path);
     while let Some(parent_path) = parent_path_opt {
-        let parent_dir = dirp_state.get_dir_ref_mut_by_path(&parent_path);
-        parent_dir.size_in_bytes += dir.size_in_bytes;
+        if let Some(parent_dir) = dirp_state.get_mut(&parent_path) {
+            parent_dir.size_in_bytes += dir.size_in_bytes;
+        }
         parent_path_opt = parent_file_path(&parent_path);
     }
 
     // Update state.
-    dirp_state.insert(dir.path(&dirp_state), dir);
+    dirp_state.insert(dir.path.clone(), dir);
 }
 
-fn process_remove_marked(root_path: &String, dirp_state: &DirpState) -> Result<(), DirpError> {
+fn process_remove_marked(root_path: &String, dirp_state: &DirHash) -> Result<(), DirpError> {
     println!("");
     for marked_file in marked_files_list(&root_path, &dirp_state) {
         println!("{}", marked_file);
@@ -190,18 +193,21 @@ fn process_remove_marked(root_path: &String, dirp_state: &DirpState) -> Result<(
     Ok(())
 }
 
-fn build_result_tree(path: &String, include_all: bool, dirp_state: &DirpState) -> Dir {
-    let root_dir = dirp_state.get_dir_ref_by_path(path);
+fn build_result_tree(path: &String, include_all: bool, dirp_state: &DirHash) -> Dir {
+    let root_dir = dirp_state.get(path).expect("internal error");
     _build_result_tree(path, include_all, dirp_state, root_dir.size_in_bytes as f64)
 }
 
 fn _build_result_tree(
     path: &String,
     include_all: bool,
-    dirp_state: &DirpState,
+    dirp_state: &DirHash,
     total_bytes: f64,
 ) -> Dir {
-    let mut result_dir = dirp_state.get_dir_ref_by_path(path).clone();
+    // dirp_state holds all of the dirs in a hash (by path). This code will convert that
+    // into a tree structure that the client code expect.
+
+    let mut result_dir = dirp_state.get(path).expect("internal error").clone();
     result_dir.percent = ((result_dir.size_in_bytes as f64 / total_bytes) * 100.0) as u8;
 
     let mut new_dir_obj_list = Vec::<FSObj>::new();
@@ -213,7 +219,7 @@ fn _build_result_tree(
                 }
                 FSObj::DirRef(dir_ref) => {
                     new_dir_obj_list.push(FSObj::Dir(_build_result_tree(
-                        &dir_ref.path(dirp_state),
+                        &dir_ref.path,
                         include_all,
                         dirp_state,
                         total_bytes,
@@ -237,31 +243,30 @@ fn _build_result_tree(
     result_dir
 }
 
-fn is_path_marked(path: &String, dirp_state: &DirpState) -> Option<bool> {
-    if dirp_state.path_exists(path) {
-        let dir = dirp_state.get_dir_ref_by_path(path);
+fn is_path_marked(path: &String, dirp_state: &DirHash) -> Option<bool> {
+    if let Some(dir) = dirp_state.get(path) {
         Some(dir.is_marked)
     } else {
-        let parent_dir = dirp_state.get_dir_ref_by_path(&parent_file_path(path)?);
+        let parent_dir = dirp_state.get(&parent_file_path(path)?)?;
         for child in &parent_dir.dir_obj_list {
             match child {
                 FSObj::Dir(obj) => {
-                    if obj.path(dirp_state) == *path {
+                    if obj.path == *path {
                         return Some(obj.is_marked);
                     }
                 }
                 FSObj::DirRef(obj) => {
-                    if obj.path(dirp_state) == *path {
+                    if obj.path == *path {
                         return Some(obj.is_marked);
                     }
                 }
                 FSObj::File(obj) => {
-                    if obj.path(dirp_state) == *path {
+                    if obj.path == *path {
                         return Some(obj.is_marked);
                     }
                 }
                 FSObj::SymLink(obj) => {
-                    if obj.path(dirp_state) == *path {
+                    if obj.path == *path {
                         return Some(obj.is_marked);
                     }
                 }
@@ -271,34 +276,34 @@ fn is_path_marked(path: &String, dirp_state: &DirpState) -> Option<bool> {
     }
 }
 
-fn do_mark_deep(path: &String, is_marked: bool, dirp_state: &mut DirpState) {
+fn do_mark_deep(path: &String, is_marked: bool, dirp_state: &mut DirHash) {
     if let None = _do_mark_deep(path, is_marked, dirp_state) {
         assert!(false, "Internal error in do_mark_deep");
     }
 }
 
-fn _do_mark_deep(path: &String, is_marked: bool, dirp_state: &mut DirpState) -> Option<()> {
+fn _do_mark_deep(path: &String, is_marked: bool, dirp_state: &mut DirHash) -> Option<()> {
     // Mark all objects as 'is_marked' from 'path' all the way down the tree.
 
     // Find 'path' in 'dirp_state'.
-    if dirp_state.path_exists(path) {
+    if let Some(dir) = dirp_state.get_mut(path) {
         // path resolves to a dir.
-        let dir = dirp_state.get_dir_ref_mut_by_path(path);
+
         dir.is_marked = is_marked;
         let mut child_path_list = Vec::new();
         for child in &mut dir.dir_obj_list {
             match child {
                 FSObj::Dir(dir) => {
-                    child_path_list.push(format!("{}/{}", path, dir.name));
+                    child_path_list.push(dir.path.clone());
                 }
                 FSObj::DirRef(dir_ref) => {
-                    child_path_list.push(format!("{}/{}", path, dir_ref.name));
+                    child_path_list.push(dir_ref.path.clone());
                 }
                 FSObj::File(file) => {
-                    child_path_list.push(format!("{}/{}", path, file.name));
+                    child_path_list.push(file.path.clone());
                 }
                 FSObj::SymLink(sym_link) => {
-                    child_path_list.push(format!("{}/{}", path, sym_link.name));
+                    child_path_list.push(sym_link.path.clone());
                 }
             }
         }
@@ -311,13 +316,11 @@ fn _do_mark_deep(path: &String, is_marked: bool, dirp_state: &mut DirpState) -> 
         // path must be a file or a sym_link.
         // Look for parent, then search parent.
 
-        let parent_path = parent_file_path(path)?;
-        let parent_dir = dirp_state.get_dir_ref_mut_by_path(&parent_path);
+        let parent_dir = dirp_state.get_mut(&parent_file_path(path)?)?;
         for child in &mut parent_dir.dir_obj_list {
             match child {
                 FSObj::File(file) => {
-                    let file_path = format!("{}/{}", parent_path, file.name);
-                    if file_path == *path {
+                    if file.path == *path {
                         // 'path' is a file.
                         file.is_marked = is_marked;
 
@@ -325,8 +328,7 @@ fn _do_mark_deep(path: &String, is_marked: bool, dirp_state: &mut DirpState) -> 
                     }
                 }
                 FSObj::SymLink(sym_link) => {
-                    let sym_link_path = format!("{}/{}", parent_path, sym_link.name);
-                    if sym_link_path == *path {
+                    if sym_link.path == *path {
                         // 'path' is a sym link.
                         sym_link.is_marked = is_marked;
 
@@ -344,12 +346,11 @@ fn _do_mark_deep(path: &String, is_marked: bool, dirp_state: &mut DirpState) -> 
     }
 }
 
-fn marked_files_list(path: &String, dirp_state: &DirpState) -> Vec<String> {
+fn marked_files_list(path: &String, dirp_state: &DirHash) -> Vec<String> {
     let mut marked_files_list = Vec::new();
 
     _marked_files_list(
         &build_result_tree(&path, true, dirp_state),
-        dirp_state,
         &mut marked_files_list,
     );
     marked_files_list.sort();
@@ -357,26 +358,26 @@ fn marked_files_list(path: &String, dirp_state: &DirpState) -> Vec<String> {
     marked_files_list
 }
 
-fn _marked_files_list(dir: &Dir, dirp_state: &DirpState, marked_files_list: &mut Vec<String>) {
+fn _marked_files_list(dir: &Dir, marked_files_list: &mut Vec<String>) {
     if dir.is_marked {
-        marked_files_list.push(dir.path(dirp_state));
+        marked_files_list.push(dir.path.clone());
     } else {
         for child in &dir.dir_obj_list {
             match child {
                 FSObj::Dir(child_dir) => {
-                    _marked_files_list(&child_dir, dirp_state, marked_files_list);
+                    _marked_files_list(&child_dir, marked_files_list);
                 }
                 FSObj::DirRef(_dir_ref) => {
                     panic!("Internal Error");
                 }
                 FSObj::File(file) => {
                     if file.is_marked {
-                        marked_files_list.push(file.path(dirp_state));
+                        marked_files_list.push(file.path.clone());
                     }
                 }
                 FSObj::SymLink(sym_link) => {
                     if sym_link.is_marked {
-                        marked_files_list.push(sym_link.path(dirp_state));
+                        marked_files_list.push(sym_link.path.clone());
                     }
                 }
             }
@@ -384,21 +385,18 @@ fn _marked_files_list(dir: &Dir, dirp_state: &DirpState, marked_files_list: &mut
     }
 }
 
-fn remove_marked_files(path: String, dirp_state: &DirpState) -> Result<(), DirpError> {
-    _remove_marked_files(
-        FSObj::Dir(build_result_tree(&path, true, dirp_state)),
-        dirp_state,
-    )
+fn remove_marked_files(path: String, dirp_state: &DirHash) -> Result<(), DirpError> {
+    _remove_marked_files(FSObj::Dir(build_result_tree(&path, true, dirp_state)))
 }
 
-fn _remove_marked_files(obj: FSObj, dirp_state: &DirpState) -> Result<(), DirpError> {
+fn _remove_marked_files(obj: FSObj) -> Result<(), DirpError> {
     match obj {
         FSObj::Dir(dir) => {
             if dir.is_marked {
-                trash::delete(&dir.path(dirp_state))?;
+                trash::delete(&dir.path)?;
             } else {
                 for child in dir.dir_obj_list {
-                    _remove_marked_files(child, dirp_state)?;
+                    _remove_marked_files(child)?;
                 }
             }
         }
@@ -407,12 +405,12 @@ fn _remove_marked_files(obj: FSObj, dirp_state: &DirpState) -> Result<(), DirpEr
         }
         FSObj::File(file) => {
             if file.is_marked {
-                trash::delete(&file.path(dirp_state))?;
+                trash::delete(&file.path)?;
             }
         }
         FSObj::SymLink(sym_link) => {
             if sym_link.is_marked {
-                trash::delete(&sym_link.path(dirp_state))?;
+                trash::delete(&sym_link.path)?;
             }
         }
     }
@@ -428,7 +426,7 @@ mod tests {
 
     #[test]
     fn test_dirp_state_task() -> Result<(), DirpError> {
-        let dirp_state = DirpStateThread::new("./test".to_string());
+        let dirp_state = DirpState::new(PathBuf::from("./test"));
 
         // Test initial dirp state.
         println!("Test initial dirp state.");
@@ -449,9 +447,9 @@ mod tests {
 
         // Toggle ./test/e and ./test/e/f open, then mark ./test/e and test result.
         println!("Toggle ./test/e and ./test/e/f open, then mark ./test/e and test result.");
-        dirp_state.send(DirpStateMessage::OpenDir("./test/e".to_string()));
-        dirp_state.send(DirpStateMessage::OpenDir("./test/e/f".to_string()));
-        dirp_state.send(DirpStateMessage::MarkPath("./test/e".to_string()));
+        dirp_state.send(DirpStateMessage::OpenDir(PathBuf::from("./test/e")));
+        dirp_state.send(DirpStateMessage::OpenDir(PathBuf::from("./test/e/f")));
+        dirp_state.send(DirpStateMessage::MarkPath(PathBuf::from("./test/e")));
         if let UserMessage::GetStateResponse(state_response) = dirp_state.recv() {
             let expected_hash = 1716204932036142087 as u64;
             let mut hasher = DefaultHasher::new();
