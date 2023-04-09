@@ -1,4 +1,5 @@
 use crate::types::*;
+use std::fs::DirEntry;
 use std::str::FromStr;
 use std::sync::mpsc::Sender;
 use std::{fs, os::macos::fs::MetadataExt, path::PathBuf};
@@ -11,8 +12,9 @@ pub fn scan_dir_path_in_threadpool(
     threadpool: &ThreadPool,
 ) {
     threadpool.execute(move || {
-        if let Err(error) = scan_dir_path(dir_path, is_open, dirp_state_sender) {
-            panic!("scan_dir_path error: {:#?}", error);
+        if let Err(_error) = scan_dir_path(dir_path.clone(), is_open, dirp_state_sender) {
+            //            panic!("scan_dir_path path: '{}' error: {:#?}", dir_path, error);
+            // ToDo: Log this error.
         }
     });
 }
@@ -29,44 +31,55 @@ pub fn scan_dir_path(
     match fs::read_dir(dir_path.clone()) {
         Ok(read_dir) => {
             for dir_entry in read_dir {
-                let dir_entry = dir_entry?;
-                let obj_path = dir_entry.path();
-                let obj_path_string = obj_path.to_string_lossy().to_string();
-                let meta_data = dir_entry.metadata()?;
+                let result =
+                    |dir_entry: Result<DirEntry, std::io::Error>| -> Result<(), DirpError> {
+                        let dir_entry = dir_entry?;
+                        let obj_path = dir_entry.path();
+                        let obj_path_string = obj_path.to_string_lossy().to_string();
+                        let meta_data = obj_path.symlink_metadata()?;
 
-                if dir_entry.file_name() == ".DS_Store" {
-                    continue;
-                }
+                        if std::env::consts::OS == "macos" {
+                            if dir_entry.file_name() == ".DS_Store" {
+                                return Ok(());
+                            } else if obj_path_string == "/Volumes" {
+                                return Ok(());
+                            } else if obj_path_string == "/System/Volumes" {
+                                return Ok(());
+                            }
+                        }
 
-                if obj_path.is_dir() {
-                    fs_obj_list.push(FSObj::DirRef(DirRef {
-                        path: obj_path_string,
-                        is_open,
-                        size_in_bytes: 0,
-                        percent: 0,
-                        is_marked: false,
-                    }));
-                } else if obj_path.is_symlink() {
-                    // NOTE: Symlink needs to be checked before file because symlinks
-                    // are files.
-                    fs_obj_list.push(FSObj::SymLink(SymLink {
-                        path: obj_path_string,
-                        size_in_bytes: 0,
-                        percent: 0,
-                        is_marked: false,
-                    }));
-                } else if obj_path.is_file() {
-                    fs_obj_list.push(FSObj::File(File {
-                        path: obj_path_string,
-                        size_in_bytes: meta_data.st_size(),
-                        percent: 0,
-                        is_marked: false,
-                    }));
+                        if meta_data.is_symlink() {
+                            fs_obj_list.push(FSObj::SymLink(SymLink {
+                                path: obj_path_string,
+                                size_in_bytes: meta_data.st_size(),
+                                percent: 0,
+                                is_marked: false,
+                            }));
+                        } else if meta_data.is_dir() {
+                            fs_obj_list.push(FSObj::DirRef(DirRef {
+                                path: obj_path_string,
+                                is_open,
+                                size_in_bytes: 0,
+                                percent: 0,
+                                is_marked: false,
+                            }));
+                        } else if meta_data.is_file() {
+                            fs_obj_list.push(FSObj::File(File {
+                                path: obj_path_string,
+                                size_in_bytes: meta_data.st_size(),
+                                percent: 0,
+                                is_marked: false,
+                            }));
+                        }
+                        Ok(())
+                    }(dir_entry);
+                if let Err(_error) = result {
+                    // ToDo: Add logging of this error.
                 }
             }
         }
-        Err(error) => {
-            println!("Cannot open file: {} (ignoring) Err: {}.", dir_path, error);
+        Err(_error) => {
+            // ToDo: Log this error.
         }
     }
 
@@ -83,7 +96,7 @@ pub fn scan_dir_path(
     Ok(())
 }
 
-pub fn indent_to_level(level: u32) -> String {
+pub fn indent_prefix_for_level(level: u32) -> String {
     let mut result = "".to_string();
     for _ in 1..level {
         result = result + "   ";
@@ -92,15 +105,35 @@ pub fn indent_to_level(level: u32) -> String {
 }
 
 pub fn human_readable_bytes(bytes: u64) -> String {
-    if bytes < 1024 {
+    if bytes < 1000 {
         return format!("{} bytes", bytes);
-    } else if bytes < 1024 * 1024 {
-        return format!("{:.2} KB", bytes as f64 / 1024.0);
-    } else if bytes < 1024 * 1024 * 1024 {
-        return format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0));
+    } else if bytes < 1_000_000 {
+        return format!("{:.2} KB", bytes as f64 / 1000.0);
+    } else if bytes < 1_000_000_000 {
+        return format!("{:.2} MB", bytes as f64 / 1_000_000.0);
     } else {
-        return format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0));
+        return format!("{:.2} GB", bytes as f64 / 1_000_000_000.0);
     }
+}
+
+pub fn parent_file_path(file_path: &String) -> Option<String> {
+    if let Ok(path) = PathBuf::from_str(&file_path) {
+        if let Some(parent) = path.parent() {
+            return Some(parent.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+pub fn file_name(file_path: &String) -> Option<String> {
+    if file_path == "/" {
+        return Some(file_path.clone());
+    } else if let Ok(path) = PathBuf::from_str(file_path) {
+        if let Some(file_name) = path.file_name() {
+            return Some(file_name.to_string_lossy().to_string());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -123,7 +156,7 @@ mod tests {
 
         let dirp_state_message = receiver.recv()?;
         if let DirpStateMessage::DirScanMessage(dir) = dirp_state_message {
-            let expected_hash = 10393733214208568773 as u64;
+            let expected_hash = 15929552558369993273 as u64;
             let mut hasher = DefaultHasher::new();
             dir.hash(&mut hasher);
             let hash = hasher.finish();
@@ -138,22 +171,4 @@ mod tests {
 
         Ok(())
     }
-}
-
-pub fn parent_file_path(file_path: &String) -> Option<String> {
-    if let Ok(path) = PathBuf::from_str(&file_path) {
-        if let Some(parent) = path.parent() {
-            return Some(parent.to_string_lossy().to_string());
-        }
-    }
-    None
-}
-
-pub fn file_name(file_path: &String) -> Option<String> {
-    if let Ok(path) = PathBuf::from_str(file_path) {
-        if let Some(file_name) = path.file_name() {
-            return Some(file_name.to_string_lossy().to_string());
-        }
-    }
-    None
 }

@@ -66,7 +66,7 @@ fn dirp_state_to_i_state(
                 false => "⏵",
             };
             let name = file_name(&dir.path)?;
-            let name = format!("{}{} {}", indent_to_level(level), flipper, name);
+            let name = format!("{}{} {}", indent_prefix_for_level(level), flipper, name);
             let size = human_readable_bytes(dir.size_in_bytes);
             let percent = format!("{}%", dir.percent);
 
@@ -85,7 +85,7 @@ fn dirp_state_to_i_state(
         }
         FSObj::DirRef(dir_ref) => {
             let name = file_name(&dir_ref.path)?;
-            let name = format!("{}> {}", indent_to_level(level), name);
+            let name = format!("{}> {}", indent_prefix_for_level(level), name);
             let size = human_readable_bytes(dir_ref.size_in_bytes);
             let percent = format!("{}%", dir_ref.percent);
 
@@ -97,7 +97,7 @@ fn dirp_state_to_i_state(
         }
         FSObj::File(file) => {
             let name = file_name(&file.path)?;
-            let name = format!("{}  {}", indent_to_level(level), name);
+            let name = format!("{}  {}", indent_prefix_for_level(level), name);
             let size = human_readable_bytes(file.size_in_bytes);
             let percent = format!("{}%", file.percent);
 
@@ -109,7 +109,7 @@ fn dirp_state_to_i_state(
         }
         FSObj::SymLink(sym_link) => {
             let name = file_name(&sym_link.path)?;
-            let name = format!("{}  {}", indent_to_level(level), name);
+            let name = format!("{}  {}", indent_prefix_for_level(level), name);
             let size = human_readable_bytes(sym_link.size_in_bytes);
             let percent = format!("{}%", sym_link.percent);
 
@@ -150,20 +150,25 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
+    // App state is maintained in a background thread.
+    // This kicks that thread off.
     let dirp_state = DirpState::new(path.clone());
 
+    // There is another thread to handle user input.
     input_thread_spawn(dirp_state.user_sender.clone());
 
-    let mut i_state = Vec::new();
+    let mut i_state_list = Vec::new();
     let mut state = 0;
 
     let mut do_remove_marked = false;
 
-    let app_state = i_state_to_app_state(&i_state);
+    let app_state = i_state_to_app_state(&i_state_list);
     let app = App::new(path.clone(), app_state);
 
     let _ = step_app(&mut terminal, app);
 
+    // This loop handles messages from the input thread, and the state
+    // thread.
     loop {
         let mut do_next = false;
         let mut do_prev = false;
@@ -171,12 +176,11 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
         match dirp_state.user_receiver.recv() {
             Ok(user_message) => match user_message {
                 UserMessage::GetStateResponse(user_message) => {
-                    // create app and run it
-                    i_state.clear();
+                    i_state_list.clear();
                     dirp_state_to_i_state(
                         &mut FSObj::Dir(user_message.dirp_state),
                         1,
-                        &mut i_state,
+                        &mut i_state_list,
                     )
                     .expect("err");
                 }
@@ -187,23 +191,27 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
                     do_prev = true;
                 }
                 UserMessage::OpenDir => {
-                    dirp_state.send(DirpStateMessage::OpenDir(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::OpenDir(i_state_list[state].path.clone()));
                 }
                 UserMessage::CloseDir => {
-                    dirp_state.send(DirpStateMessage::CloseDir(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::CloseDir(i_state_list[state].path.clone()));
                 }
                 UserMessage::ToggleDir => {
-                    dirp_state.send(DirpStateMessage::ToggleDir(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::ToggleDir(
+                        i_state_list[state].path.clone(),
+                    ));
                 }
                 UserMessage::MarkPath => {
-                    dirp_state.send(DirpStateMessage::MarkPath(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::MarkPath(i_state_list[state].path.clone()));
                 }
                 UserMessage::UnmarkPath => {
-                    dirp_state.send(DirpStateMessage::UnmarkPath(i_state[state].path.clone()));
+                    dirp_state.send(DirpStateMessage::UnmarkPath(
+                        i_state_list[state].path.clone(),
+                    ));
                 }
                 UserMessage::ToggleMarkPath => {
                     dirp_state.send(DirpStateMessage::ToggleMarkPath(
-                        i_state[state].path.clone(),
+                        i_state_list[state].path.clone(),
                     ));
                 }
                 UserMessage::RemoveMarked => {
@@ -217,7 +225,7 @@ pub fn ui_runloop(args: Args) -> Result<(), Box<dyn Error>> {
             }
         }
 
-        let app_state = i_state_to_app_state(&i_state);
+        let app_state = i_state_to_app_state(&i_state_list);
         let mut app = App::new(path.clone(), app_state);
 
         app.set_selected(state);

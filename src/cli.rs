@@ -1,5 +1,6 @@
 use crate::types::*;
-use std::env::{args, current_dir, home_dir};
+use home::home_dir;
+use std::env::{args, current_dir};
 use std::fs::canonicalize;
 use std::path::PathBuf;
 use std::process::exit;
@@ -21,12 +22,21 @@ pub fn parse_args() -> Args {
 }
 
 fn normalize_file_path(file_path: &String) -> PathBuf {
-    match file_path.as_str() {
-        "~" => home_dir().expect("~ can not be resolved to a home directory."),
-        "." => current_dir().expect(". can not be resolved to the current working directory."),
-        _ => canonicalize(file_path.clone())
-            .expect(&format!("Could not canonicalize file path: {}.", file_path)),
+    let mut file_path = file_path.clone();
+    if file_path.chars().collect::<Vec<char>>()[0] == '~' {
+        file_path = home_dir()
+            .expect("~ can not be resolved to a home directory.")
+            .to_string_lossy()
+            .to_string();
     }
+    if file_path.chars().collect::<Vec<char>>()[0] == '.' {
+        file_path = current_dir()
+            .expect(". can not be resolved to the current working directory.")
+            .to_string_lossy()
+            .to_string();
+    }
+
+    canonicalize(PathBuf::from(file_path)).expect("")
 }
 
 fn print_usage() {
@@ -35,7 +45,7 @@ fn print_usage() {
     println!("");
     println!("USAGE: dirp [directory path]");
     println!("");
-    println!("Keyboard commands:");
+    println!("Key Bindings:");
     println!("");
     println!("    Up Arrow, p          - Move selection up.");
     println!("    Down Arrow, n        - Move selection down.");
@@ -44,8 +54,7 @@ fn print_usage() {
     println!("    Right Arrow          - Hide directory contents.");
     println!("    f                    - Toggle directory contents.");
     println!("    ");
-    println!("    d                    - Mark selection for removal.");
-    println!("    d                    - Unmark selection for removal.");
+    println!("    d                    - Mark/unmark selection for removal.");
     println!("    Delete, Backspace    - Toggle selection for removal.");
     println!("    ");
     println!("    x                    - Remove marked files, and exit program.");

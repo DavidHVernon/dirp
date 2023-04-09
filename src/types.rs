@@ -71,7 +71,6 @@ impl SizeInBytes for FSObj {
 #[derive(Debug, Clone)]
 pub enum DirpStateMessage {
     DirScanMessage(Dir),
-    GetStateRequest,
     OpenDir(String),
     CloseDir(String),
     ToggleDir(String),
@@ -80,6 +79,7 @@ pub enum DirpStateMessage {
     ToggleMarkPath(String),
     RemoveMarked,
     Timer,
+    #[allow(dead_code)]
     Quit,
 }
 
@@ -141,6 +141,25 @@ impl DirpState {
         }
     }
 
+    pub fn send(&self, message: DirpStateMessage) {
+        if let Err(error) = self.dirp_state_sender.send(message) {
+            panic!("DirpState.send(): error: {:#?}", error);
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn recv(&self) -> UserMessage {
+        match self.user_receiver.recv() {
+            Ok(message) => {
+                return message;
+            }
+            Err(error) => {
+                panic!("DirpState.recv(): error: {:#?}", error);
+            }
+        }
+    }
+
+    #[allow(dead_code)]
     pub fn quit(self) {
         if let Err(error) = self.dirp_state_sender.send(DirpStateMessage::Quit) {
             panic!(
@@ -154,28 +173,6 @@ impl DirpState {
                 error
             );
         }
-    }
-
-    pub fn send(&self, message: DirpStateMessage) {
-        if let Err(error) = self.dirp_state_sender.send(message) {
-            panic!("DirpState.send(): error: {:#?}", error);
-        }
-    }
-
-    pub fn recv(&self) -> UserMessage {
-        match self.user_receiver.recv() {
-            Ok(message) => {
-                return message;
-            }
-            Err(error) => {
-                panic!("DirpState.recv(): error: {:#?}", error);
-            }
-        }
-    }
-
-    pub fn request(&self, request: DirpStateMessage) -> UserMessage {
-        self.send(request);
-        self.recv()
     }
 }
 

@@ -1,4 +1,4 @@
-use std::{io, path::PathBuf};
+use std::io;
 use tui::{
     backend::Backend,
     layout::{Constraint, Layout},
