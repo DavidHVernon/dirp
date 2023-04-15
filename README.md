@@ -28,7 +28,7 @@ The user can use the keyboard for various things.
     q                    - Exit program.
 ```
 
-NOTE: Nothing is removed from the file system until the user hits the 'x' key. A list of all marked files is then presented and the user is prompted. 
+NOTE: Nothing is removed from the file system until the user hits the 'x' key. A list of all marked files is then presented and the user is prompted to remove them or just exit. 
 
 NOTE: This tool doesn't delete anything. It moves all marked files into the system Trash directory.
 
