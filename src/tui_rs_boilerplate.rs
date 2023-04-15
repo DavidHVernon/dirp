@@ -82,7 +82,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let normal_header_style = Style::default().bg(Color::Blue);
     let normal_style = Style::default();
     let disabled_style = Style::default().add_modifier(Modifier::DIM);
-    let header_cells = ["File", "%", "Size"]
+    let header_cells = ["", "%", "Size"]
         .iter()
         .map(|h| Cell::from(*h).style(Style::default().fg(Color::LightGreen)));
     let header = Row::new(header_cells)
