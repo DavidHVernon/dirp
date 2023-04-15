@@ -26,6 +26,17 @@ pub fn dirp_state_thread_spawn(
     })
 }
 
+//
+// This thread manages the enter state of this program. It has an object on the stack
+// called 'dirp_state'. That object is a hash from String (a file path) to a Dir object
+// (Directory meta data gleaned from the file system).
+//
+// You interact with this thread (and it's state) by sending it messages on a channel.
+//
+// This thread runs a timer. Every time the timer kicks off a 'dirty state' vairable is checked ('is_state_dirty').
+// If that var is true then the thread cooks up a representation of what state is currently being displayed to the
+// user (a proper subset of the sate in 'dirp_state') and sends it along.
+//
 pub fn dirp_state_loop(
     root_path: String,
     user_sender: Sender<UserMessage>,

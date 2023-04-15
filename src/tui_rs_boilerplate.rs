@@ -7,6 +7,9 @@ use tui::{
     Frame, Terminal,
 };
 
+// Note: The code in this module is kinda a mess. I stripped it out of an example
+// program for tui, and hacked it for my purposes.
+
 pub struct App<'a> {
     pub path: String,
     state: TableState,

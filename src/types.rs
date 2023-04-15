@@ -1,4 +1,4 @@
-use crate::dir_pruner::dirp_state_thread_spawn;
+use crate::dirp_state::dirp_state_thread_spawn;
 use std::{
     collections::HashMap,
     hash::Hash,

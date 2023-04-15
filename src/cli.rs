@@ -21,6 +21,11 @@ pub fn parse_args() -> Args {
     }
 }
 
+//
+// A normalized file path is one that has the '~' (home dir) character
+// removed, as well as the '.' (current dir) character removed, and is then
+// 'canonicalize' according to the fs library.
+//
 fn normalize_file_path(file_path: &String) -> PathBuf {
     let mut file_path = file_path.clone();
     if file_path.chars().collect::<Vec<char>>()[0] == '~' {

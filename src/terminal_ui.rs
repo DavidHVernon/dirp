@@ -11,6 +11,9 @@ use std::{error::Error, io};
 use std::{sync::mpsc::Sender, thread};
 use tui::{backend::CrosstermBackend, Terminal};
 
+// Note: The code in this module is kinda a mess. I stripped it out of an example
+// program for tui, and hacked it for my purposes.
+
 fn input_thread_spawn(user_sender: Sender<UserMessage>) {
     thread::spawn(move || {
         let result = input_thread(user_sender);
