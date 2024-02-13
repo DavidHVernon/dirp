@@ -1,5 +1,4 @@
 #!/bin/bash
-set -x
 set -e
 cargo build --release
 pushd ./target/release

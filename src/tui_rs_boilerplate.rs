@@ -88,7 +88,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
     let header = Row::new(header_cells)
         .style(normal_header_style)
         .height(1)
-        .bottom_margin(1);
+        .bottom_margin(0);
     let rows = app.items.iter().map(|item| {
         let height = item
             .display_data
@@ -104,7 +104,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
                 Cell::from(*c).style(normal_style)
             }
         });
-        Row::new(cells).height(height as u16).bottom_margin(1)
+        Row::new(cells).height(height as u16).bottom_margin(0)
     });
 
     let path = app.path.clone();

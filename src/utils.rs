@@ -99,7 +99,7 @@ pub fn scan_dir_path(
 pub fn indent_prefix_for_level(level: u32) -> String {
     let mut result = "".to_string();
     for _ in 1..level {
-        result = result + "   ";
+        result = result + " ";
     }
     return result;
 }
