@@ -2,8 +2,15 @@ use crate::types::*;
 use std::fs::DirEntry;
 use std::str::FromStr;
 use std::sync::mpsc::Sender;
-use std::{fs, os::macos::fs::MetadataExt, path::PathBuf};
+use std::{fs, path::PathBuf};
 use threadpool::ThreadPool;
+
+#[cfg(target_os = "linux")]
+use std::os::linux::fs::MetadataExt;
+#[cfg(target_os = "macos")]
+use std::os::macos::fs::MetadataExt;
+#[cfg(target_os = "windows")]
+use std::os::windows::fs::MetadataExt;
 
 pub fn scan_dir_path_in_threadpool(
     dir_path: String,
